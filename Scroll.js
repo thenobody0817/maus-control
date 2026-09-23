@@ -27,8 +27,9 @@ var MAX_FACTOR = 4.0
 var DEFAULT_FACTOR = 1.0
 
 // Sliders land on round steps; without this a stored 1.5000001 reads as a
-// bug and rewrites the generated file for no reason.
-var STEP = 0.05
+// bug and rewrites the generated file for no reason. One percent is fine
+// enough that the wheel can be nudged without the panel feeling notchy.
+var STEP = 0.01
 
 // The factor is written into Lua as a literal, so it is fixed to a known
 // number of decimals rather than left to whatever the runtime prints. That

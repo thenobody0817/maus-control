@@ -29,13 +29,20 @@ const Scroll = require("../Scroll.js")
 // factor always normalizes to the same number: that stable text is what
 // lets the setup check skip a pointless rewrite.
 assert.strictEqual(Scroll.normalizeFactor(1.5), 1.5)
-assert.strictEqual(Scroll.normalizeFactor(1.23), 1.25)
-assert.strictEqual(Scroll.normalizeFactor(1.22), 1.2)
+assert.strictEqual(Scroll.normalizeFactor(1.23), 1.23)
+assert.strictEqual(Scroll.normalizeFactor(1.224), 1.22)
 assert.strictEqual(Scroll.normalizeFactor(0.30000000000000004), 0.3)
 assert.strictEqual(Scroll.normalizeFactor(-5), Scroll.MIN_FACTOR, "clamped low")
 assert.strictEqual(Scroll.normalizeFactor(99), Scroll.MAX_FACTOR, "clamped high")
 assert.strictEqual(Scroll.normalizeFactor("nonsense"), Scroll.DEFAULT_FACTOR)
 assert.strictEqual(Scroll.normalizeFactor(NaN), Scroll.DEFAULT_FACTOR)
+
+// The step is one percent, and every step lands on a two-decimal literal.
+assert.strictEqual(Scroll.STEP, 0.01)
+for (let f = Scroll.MIN_FACTOR; f <= Scroll.MAX_FACTOR + 1e-9; f += Scroll.STEP) {
+  assert.ok(/^\d+\.\d{2}$/.test(Scroll.luaFactor(f)),
+    `${Scroll.luaFactor(f)} is not a two-decimal literal`)
+}
 
 assert.strictEqual(Scroll.luaFactor(1.5), "1.50")
 assert.strictEqual(Scroll.luaFactor(1), "1.00")
@@ -43,11 +50,13 @@ assert.strictEqual(Scroll.luaFactor(0.25), "0.25")
 assert.strictEqual(Scroll.luaFactor(-0.0000001), "0.10", "no negative zero, clamped up")
 assert.strictEqual(Scroll.factorLabel(2), "2.00×")
 
-// Every value the slider can produce compiles to a Lua number, so the
-// generated file can never be handed something the parser rejects. Lua
+// A representative sample of slider positions compiles to a Lua number, so
+// the generated file can never be handed something the parser rejects. Lua
 // prints numbers in its own shortest form (0.10 comes back "0.1"), so the
-// value is compared numerically, not as text.
-for (let f = Scroll.MIN_FACTOR; f <= Scroll.MAX_FACTOR + 1e-9; f += Scroll.STEP) {
+// value is compared numerically. The whole range is covered by the
+// two-decimal format check above without spawning the interpreter 400 times.
+for (const f of [Scroll.MIN_FACTOR, 0.11, 0.5, 0.99, 1.0, 1.01, 1.23, 2.0,
+                 Math.PI, Scroll.MAX_FACTOR]) {
   const literal = Scroll.luaFactor(f)
   const out = execFileSync("lua", ["-e", "io.write(" + literal + ")"], { encoding: "utf8" })
   assert.ok(Math.abs(Number(out) - Number(literal)) < 1e-9,

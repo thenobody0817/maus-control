@@ -175,6 +175,17 @@ Item {
       visible: root.on
       spacing: Style.space(2)
 
+      // Nudges are for the last percent: a drag cannot land on an exact
+      // value, and the wheel notch is easy to overshoot for a one-tick
+      // adjustment.
+      Ui.Button {
+        text: "−"
+        bordered: true
+        enabled: root.config.factor > Scroll.MIN_FACTOR
+        horizontalPadding: Style.space(3)
+        tooltipText: "Slower by " + Scroll.STEP.toFixed(Scroll.DECIMALS) + "×"
+        onClicked: root.panel.setScrollFactor(root.config.factor - Scroll.STEP, true)
+      }
       Ui.PanelSlider {
         Layout.fillWidth: true
         fillColor: Color.accent
@@ -186,6 +197,14 @@ Item {
         value: root.config.factor
         onMoved: function (next) { root.panel.setScrollFactor(next, false) }
         onReleased: function (next) { root.panel.setScrollFactor(next, true) }
+      }
+      Ui.Button {
+        text: "+"
+        bordered: true
+        enabled: root.config.factor < Scroll.MAX_FACTOR
+        horizontalPadding: Style.space(3)
+        tooltipText: "Faster by " + Scroll.STEP.toFixed(Scroll.DECIMALS) + "×"
+        onClicked: root.panel.setScrollFactor(root.config.factor + Scroll.STEP, true)
       }
       Text {
         Layout.minimumWidth: Style.space(24)
