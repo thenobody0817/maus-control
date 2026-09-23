@@ -2,10 +2,10 @@
   "schemaVersion": 1,
   "id": "local.maus.control",
   "name": "Maus Control",
-  "version": "1.1.0",
+  "version": "1.2.0",
   "author": "thenobody0817",
   "license": "MIT",
-  "description": "See every button on your mouse laid out on a diagram, with leader lines to what each one does, and rebind them to any shortcut. Switch between named DPI presets, and put one on a thumb button. Reads whichever mouse is plugged in and redraws itself to match. Nothing is ever written to the mouse.",
+  "description": "See every button on your mouse laid out on a diagram, with leader lines to what each one does, and rebind them to any shortcut. Switch between named DPI presets, put one on a thumb button, and set the wheel speed per mouse. Reads whichever mouse is plugged in and redraws itself to match. Nothing is ever written to the mouse.",
   "kinds": ["panel", "bar-widget"],
   "entryPoints": {
     "panel": "MausControlPanel.qml",

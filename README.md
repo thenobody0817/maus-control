@@ -4,7 +4,7 @@ An Omarchy shell plugin that shows every button on your mouse on a diagram,
 with a leader line from each button to a label saying what it does — and lets
 you rebind any of them to a shortcut, a window action, or a command. It also
 gives the mouse named DPI presets you can switch between, including from a
-button on the mouse itself.
+button on the mouse itself, and a per-mouse wheel-speed multiplier.
 
 The diagram is generated from whatever mouse is actually plugged in. A
 two-button travel mouse and a seven-button gaming mouse each draw as
@@ -19,9 +19,9 @@ answer to remapping a mouse on Linux. Piper flashes the mouse's **onboard
 memory**, so your remaps follow the device to every machine you plug it into.
 
 Maus Control never touches the hardware. Everything it does is a Hyprland setting
-on *this* machine, scoped to *this* device name — a keybinding, or a pointer
-speed. Plug the mouse into another computer and it behaves exactly as it did
-out of the box.
+on *this* machine, scoped to *this* device name — a keybinding, a pointer
+speed, or a wheel speed. Plug the mouse into another computer and it behaves
+exactly as it did out of the box.
 
 ## Install
 
@@ -172,6 +172,23 @@ a mouse whose sensor setting you cannot find out still gets a working feature.
 Switching a preset is one `hl.device` call inside the generated Lua, with the
 sensitivity table precomputed — no process to spawn on the press. The helper
 is only asked afterwards to remember the choice and draw the overlay.
+
+## Scroll speed
+
+Press **Scroll** in the footer to put a multiplier on the wheel. `1.00×` is the
+wheel exactly as Hyprland had it, above `1.00×` scrolls further per notch, and
+below it scrolls less. It is a plain multiplier rather than an acceleration
+curve, so the number is the whole setting.
+
+Dragging the slider previews the change live, so you can feel where the wheel
+should sit; **Apply** writes it. Like the DPI presets it is a Hyprland setting
+scoped to this one device, and nothing is written to the mouse. There is no
+overlay and no button to bind: the wheel is the thing you are adjusting.
+
+In the generated Lua it is a single `hl.device` call carrying `scroll_factor`,
+applied once at load and emitted after the DPI runtime. A DPI preset switch
+touches only `accel_profile` and `sensitivity`, and Hyprland merges partial
+per-device configs, so the two settings never disturb each other.
 
 ### Moving a button
 
@@ -329,11 +346,13 @@ anchors also call, so a side-button marker can never drift off the drawn edge.
 | `Leaders.js` | label placement and leader routing |
 | `Actions.js` | what a button can do, and the Lua it compiles to |
 | `Dpi.js` | DPI presets, and the sensitivity arithmetic behind them |
+| `Scroll.js` | wheel speed, as a per-device multiplier |
 | `Config.js` | config shape, Lua generation, the loader hook |
 | `MouseCanvas.qml` | the diagram |
 | `MausControlPanel.qml` | the panel |
 | `ActionPicker.qml` | the rebinding sidebar |
 | `DpiPanel.qml` | the DPI sidebar |
+| `ScrollPanel.qml` | the wheel-speed sidebar |
 | `scripts/maus-control` | the only path to the filesystem and the compositor |
 
 ## Tests
@@ -358,6 +377,12 @@ generated file is executed by the compositor. It also holds the two copies
 of the trigger rules — `Config` generates the bind string, `Devices` states
 it for the UI — to each other across the whole id space, because two copies
 of one rule is how keystroke buttons were silently dropped once already.
+
+`test_scroll.js` checks the multiplier's clamp, step and literal formatting,
+that every slider position compiles to a Lua number, and that the emitted
+`hl.device` call is byte-stable and follows the DPI runtime. It also runs the
+generated file through `luac` with a hostile device name, the same way
+`test_config.js` does.
 
 `test_leaders.js` sweeps every button count from 2 to 16 and shuffles each
 one through every place, asserting that no two buttons ever end up in the

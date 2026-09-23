@@ -48,17 +48,17 @@ function validKey(key) {
 // The shape every device entry has. One definition, because an entry built
 // without a `layout` reads back as a device whose buttons have no places.
 function blankEntry() {
-  return { label: "", learned: [], layout: {}, bindings: {}, dpi: null }
+  return { label: "", learned: [], layout: {}, bindings: {}, dpi: null, scroll: null }
 }
 
 // Accept whatever is on disk and return something the UI can rely on.
 // Unknown keys are dropped rather than preserved: this file is generated
 // from the panel, and silently carrying junk forward hides bugs.
 //
-// `Dpi` is passed in rather than imported so this file stays loadable from
-// a node test without QML's import machinery, the same reason generateLua
-// takes `Actions`.
-function normalize(raw, Dpi) {
+// `Dpi` and `Scroll` are passed in rather than imported so this file stays
+// loadable from a node test without QML's import machinery, the same reason
+// generateLua takes `Actions`.
+function normalize(raw, Dpi, Scroll) {
   var out = defaults()
   if (!raw || typeof raw !== "object") return out
 
@@ -72,6 +72,7 @@ function normalize(raw, Dpi) {
     var clean = blankEntry()
     clean.label = String(entry.label || "")
     if (Dpi) clean.dpi = Dpi.normalize(entry.dpi)
+    if (Scroll) clean.scroll = Scroll.normalize(entry.scroll)
 
     // code -> place id, recorded by the guided pass. Places are validated
     // by the caller against Profiles.PLACES; anything unrecognised is kept
@@ -293,20 +294,74 @@ function dpiSlots(devices, config, Dpi) {
   return { slots: slots, byKey: byKey, skipped: skipped }
 }
 
+// ------------------------------------------------------------ scroll
+
+// Which devices get a wheel-speed line, in the order the generated file
+// writes them. Simpler than DPI: there is one number per device and no
+// runtime, so a device that resolves to nothing is simply not emitted.
+//
+// Returns { slots, byKey, skipped } to match dpiSlots, though only `slots`
+// and `skipped` are used.
+function scrollSlots(devices, config, Scroll) {
+  var slots = []
+  var byKey = {}
+  var skipped = []
+  var list = devices || []
+  if (!Scroll) return { slots: slots, byKey: byKey, skipped: skipped }
+
+  for (var i = 0; i < list.length; i++) {
+    var device = list[i]
+    var resolved = Scroll.resolve(device, deviceEntry(config, device.key).scroll)
+    if (resolved.empty) continue
+    if (!resolved.ok) {
+      skipped.push({ device: device.key, reason: resolved.error })
+      continue
+    }
+    byKey[device.key] = slots.length + 1
+    slots.push(resolved)
+  }
+  return { slots: slots, byKey: byKey, skipped: skipped }
+}
+
+// Apply each device's wheel speed once, at load.
+//
+// Emitted after the DPI preamble deliberately: a DPI button later sets only
+// accel_profile and sensitivity, and Hyprland merges partial per-device
+// configs, so the scroll factor set here is not disturbed by a switch.
+function scrollPreamble(slots, Actions, Scroll) {
+  var lines = [
+    "-- ---------------------------------------------------------------- scroll",
+    "--",
+    "-- Wheel speed per device, as libinput's scroll factor: 1.0 is",
+    "-- unchanged, above is faster, below is slower. See Scroll.js.",
+    ""
+  ]
+
+  for (var i = 0; i < slots.length; i++) {
+    var slot = slots[i]
+    lines.push(Actions.luaComment(slot.label + "  [" + slot.name + "]  scroll " + Scroll.luaFactor(slot.factor) + "x"))
+    lines.push("hl.device({ name = " + Actions.luaString(slot.name) + ", scroll_factor = " + Scroll.luaFactor(slot.factor) + " })")
+    lines.push("")
+  }
+
+  return lines.join("\n")
+}
+
 // Build the whole file.
 //
 //   devices  discovery output, for the Hyprland device name and the label
 //   config   normalized config
 //   Actions  the Actions module (passed in so this file stays importable
 //   Dpi      from node tests without QML's import machinery)
+//   Scroll   the same, for wheel speed
 //   helper   absolute path to scripts/maus-control, which the DPI binds call
 //            to persist a switch and draw the OSD
 //
-// Returns { text, binds, skipped, dpi } — `skipped` explains anything
-// dropped so the panel can say why a mapping is not live, and `dpi` is the
-// resolved per-device preset list, in the same slot order the generated
+// Returns { text, binds, skipped, dpi, scroll } — `skipped` explains
+// anything dropped so the panel can say why a mapping is not live; `dpi` is
+// the resolved per-device preset list, in the same slot order the generated
 // binds use, so the panel can write the sidecar the helper reads.
-function generateLua(devices, config, Actions, Dpi, helper) {
+function generateLua(devices, config, Actions, Dpi, Scroll, helper) {
   var lines = [HEADER]
   var binds = 0
   var skipped = []
@@ -319,6 +374,12 @@ function generateLua(devices, config, Actions, Dpi, helper) {
   var dpi = dpiSlots(list, config, Dpi)
   for (var s = 0; s < dpi.skipped.length; s++) skipped.push(dpi.skipped[s])
   if (dpi.slots.length > 0) lines.push(dpiPreamble(dpi.slots, Actions, Dpi, helper))
+
+  // Wheel speed is applied after the DPI runtime, so a switch cannot be
+  // mistaken for it and it survives one untouched.
+  var scroll = scrollSlots(list, config, Scroll)
+  for (var w = 0; w < scroll.skipped.length; w++) skipped.push(scroll.skipped[w])
+  if (scroll.slots.length > 0) lines.push(scrollPreamble(scroll.slots, Actions, Scroll))
 
   for (var d = 0; d < list.length; d++) {
     var device = list[d]
@@ -414,8 +475,8 @@ function generateLua(devices, config, Actions, Dpi, helper) {
     lines.push("")
   }
 
-  if (binds === 0 && dpi.slots.length === 0) lines.push("-- Nothing mapped.")
-  return { text: lines.join("\n") + "\n", binds: binds, skipped: skipped, dpi: dpi.slots }
+  if (binds === 0 && dpi.slots.length === 0 && scroll.slots.length === 0) lines.push("-- Nothing mapped.")
+  return { text: lines.join("\n") + "\n", binds: binds, skipped: skipped, dpi: dpi.slots, scroll: scroll.slots }
 }
 
 // ------------------------------------------------------------ hook line
@@ -500,6 +561,7 @@ if (typeof module !== "undefined") {
     setBinding: setBinding,
     countBindings: countBindings,
     dpiSlots: dpiSlots,
+    scrollSlots: scrollSlots,
     generateLua: generateLua,
     hookBlock: hookBlock,
     hasHook: hasHook,

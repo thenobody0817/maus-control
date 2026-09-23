@@ -10,6 +10,7 @@ import "Leaders.js" as Leaders
 import "Actions.js" as Actions
 import "Config.js" as Config
 import "Dpi.js" as Dpi
+import "Scroll.js" as Scroll
 
 // Maus Control — see what every button on your mouse does, and change it.
 //
@@ -177,6 +178,7 @@ Item {
   function openDpi() {
     selectedCode = -1
     capturing = false
+    scrollOpen = false
     dpiOpen = true
   }
 
@@ -341,6 +343,87 @@ Item {
       if (resolved) live[resolved.name] = index - 1
     }
     dpiLive = live
+  }
+
+  // ------------------------------------------------------------ scroll
+  //
+  // Wheel speed for this mouse, as one multiplier. See Scroll.js for what
+  // the number means; the compositor keeps it entirely, and there is no
+  // runtime or state file because nothing here is switched at press time.
+
+  property bool scrollOpen: false
+
+  readonly property var scrollConfig: {
+    configRev
+    return Scroll.normalize(Config.deviceEntry(config, deviceKey).scroll)
+  }
+
+  readonly property bool scrollOn: scrollConfig.enabled
+
+  readonly property string scrollReadout: Scroll.factorLabel(scrollConfig.factor)
+
+  // The sidebar has one slot, so opening wheel speed puts the button
+  // inspector and the DPI sidebar away rather than fighting them for it.
+  function openScroll() {
+    selectedCode = -1
+    capturing = false
+    dpiOpen = false
+    scrollOpen = true
+  }
+
+  // Every scroll edit goes through here and hands the stored value straight
+  // back, so callers preview from what they just wrote rather than reading
+  // it out of a property binding they have only just invalidated.
+  function writeScroll(next) {
+    if (!deviceKey) return next
+    if (!config.devices[deviceKey]) config.devices[deviceKey] = Config.blankEntry()
+    config.devices[deviceKey].scroll = next
+    configRev++
+    dirty = true
+    return next
+  }
+
+  function setScrollEnabled(on) {
+    if (on) {
+      previewScroll(writeScroll(Scroll.enable(scrollConfig)).factor)
+      say("")
+      return
+    }
+    // The factor is kept, so turning this back on restores the last value
+    // rather than resetting to 1.0. Previewed at neutral so the wheel is
+    // handed back immediately, not only on the next Apply.
+    writeScroll(Scroll.normalize({ enabled: false, factor: scrollConfig.factor }))
+    previewScroll(Scroll.DEFAULT_FACTOR)
+    say("Wheel speed handed back to Hyprland on the next Apply.")
+  }
+
+  // `preview` is false while the slider is still moving. Previewing spawns
+  // a process, and doing that on every frame of a drag would queue up more
+  // of them than the compositor ever gets to run; the release previews.
+  function setScrollFactor(value, preview) {
+    var next = writeScroll(Scroll.withFactor(scrollConfig, value))
+    if (preview) previewScroll(next.factor)
+  }
+
+  // Apply one factor to the running compositor without writing anything, so
+  // dragging the slider is something you can feel. Nothing is persisted
+  // until Apply, which is the same promise the rest of the panel makes.
+  function previewScroll(factor) {
+    if (!isFinite(factor) || !device || !device.hyprName || scrollPreviewProc.running) return
+    scrollPreviewProc.payload = JSON.stringify({ device: device.hyprName, factor: factor })
+    scrollPreviewProc.stdinEnabled = true
+    scrollPreviewProc.running = true
+  }
+
+  Process {
+    id: scrollPreviewProc
+    property string payload: ""
+    command: [root.helper, "scroll", "preview"]
+    stdinEnabled: false
+    onStarted: {
+      scrollPreviewProc.write(scrollPreviewProc.payload)
+      scrollPreviewProc.stdinEnabled = false
+    }
   }
 
   function isMapped(code) {
@@ -715,7 +798,7 @@ Item {
       if (readConfigProc.buffer.trim() !== "") {
         try { parsed = JSON.parse(readConfigProc.buffer) } catch (e) { parsed = null }
       }
-      root.config = Config.normalize(parsed, Dpi)
+      root.config = Config.normalize(parsed, Dpi, Scroll)
       root.configRev++
       root.refresh()
     }
@@ -735,7 +818,7 @@ Item {
   // about what this version would generate — that comparison is how a
   // stale generated file is noticed at all.
   function generate() {
-    return Config.generateLua(devices, config, Actions, Dpi, helper)
+    return Config.generateLua(devices, config, Actions, Dpi, Scroll, helper)
   }
 
   function applyNow() {
@@ -1157,6 +1240,7 @@ Item {
           if (root.dragging) root.cancelDrag()
           else if (root.selectedCode >= 0) root.selectedCode = -1
           else if (root.dpiOpen) root.dpiOpen = false
+          else if (root.scrollOpen) root.scrollOpen = false
           else root.requestClose()
           event.accepted = true
         }
@@ -1274,6 +1358,32 @@ Item {
                   hoverEnabled: true
                   cursorShape: Qt.PointingHandCursor
                   onClicked: root.openDpi()
+                }
+              }
+
+              // Wheel speed, beside the pointer speed it sits next to in the
+              // sidebar. It never changes on its own, so it is a plain
+              // readout rather than a watched one.
+              Text {
+                visible: root.scrollOn
+                text: "·"
+                color: Color.muted
+                font.family: Style.font.family
+                font.pixelSize: Style.font.bodySmall
+              }
+              Text {
+                visible: root.scrollOn
+                text: "⇅  " + root.scrollReadout + " scroll"
+                color: Color.accent
+                font.family: Style.font.family
+                font.pixelSize: Style.font.bodySmall
+                font.weight: Font.DemiBold
+
+                MouseArea {
+                  anchors.fill: parent
+                  hoverEnabled: true
+                  cursorShape: Qt.PointingHandCursor
+                  onClicked: root.openScroll()
                 }
               }
             }
@@ -1706,6 +1816,23 @@ Item {
             }
           }
 
+          // -------------------------------------------- scroll
+          Rectangle {
+            Layout.preferredWidth: 340
+            Layout.fillHeight: true
+            visible: root.scrollOpen && !root.learning && root.selectedCode < 0
+            radius: Style.cornerRadius > 0 ? Style.cornerRadius : 6
+            color: Qt.rgba(Color.foreground.r, Color.foreground.g, Color.foreground.b, 0.035)
+            border.width: 1
+            border.color: Qt.rgba(Color.foreground.r, Color.foreground.g, Color.foreground.b, 0.12)
+
+            ScrollPanel {
+              anchors.fill: parent
+              anchors.margins: Style.space(4)
+              panel: root
+            }
+          }
+
           // -------------------------------------------- inspector
           Rectangle {
             Layout.preferredWidth: 320
@@ -1754,6 +1881,14 @@ Item {
             onClicked: root.dpiOpen ? root.dpiOpen = false : root.openDpi()
           }
           Ui.Button {
+            text: "Scroll"
+            bordered: true
+            selected: root.scrollOpen
+            enabled: !root.learning
+            tooltipText: "Wheel speed for this mouse, as a multiplier."
+            onClicked: root.scrollOpen ? root.scrollOpen = false : root.openScroll()
+          }
+          Ui.Button {
             text: root.learning ? "Cancel detect" : "Detect buttons"
             bordered: true
             selected: root.learning
@@ -1800,6 +1935,7 @@ Item {
     capturing = false
     // One sidebar, one occupant.
     dpiOpen = false
+    scrollOpen = false
   }
 
   // Role and protection flags for a code on the current device. The role

@@ -7,6 +7,7 @@ const { execFileSync } = require("child_process")
 const A = require("../Actions.js")
 const C = require("../Config.js")
 const Dpi = require("../Dpi.js")
+const Scroll = require("../Scroll.js")
 
 // ---------------------------------------------------------------- the math
 
@@ -195,7 +196,7 @@ function build(bindings, dpiConfig) {
     scopeToDevice: true,
     devices: { "046d:4079:x": { bindings: bindings, dpi: dpiConfig } }
   }, Dpi)
-  return C.generateLua([DEVICE], config, A, Dpi, HELPER)
+  return C.generateLua([DEVICE], config, A, Dpi, Scroll, HELPER)
 }
 
 function luaChecks(text) {
@@ -441,7 +442,7 @@ function deviceCalls(rows) {
       "046d:c52b:y": { bindings: { "275": { action: "dpi-cycle" } }, dpi: Dpi.enable(Dpi.normalize({ base: 3200 })) }
     }
   }, Dpi)
-  const generated = C.generateLua([DEVICE, second], config, A, Dpi, HELPER)
+  const generated = C.generateLua([DEVICE, second], config, A, Dpi, Scroll, HELPER)
   assert.strictEqual(generated.dpi.length, 2)
   assert.strictEqual(generated.binds, 2)
   assert.ok(generated.text.includes("mc_step(1, 1)") && generated.text.includes("mc_step(2, 1)"),
@@ -483,7 +484,7 @@ function deviceCalls(rows) {
   const config = C.normalize({
     devices: { "046d:4079:x": { dpi: Dpi.enable(Dpi.blank()) } }
   }, Dpi)
-  const generated = C.generateLua([evil], config, A, Dpi, HELPER)
+  const generated = C.generateLua([evil], config, A, Dpi, Scroll, HELPER)
   luaChecks(generated.text)
   const seen = deviceCalls(runLua(generated.text, ""))
   assert.strictEqual(seen[0].name, evil.hyprName,

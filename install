@@ -22,9 +22,11 @@ FILES=(
   ActionPicker.qml
   BarWidget.qml
   DpiPanel.qml
+  ScrollPanel.qml
   Devices.js
   Profiles.js
   Dpi.js
+  Scroll.js
   Leaders.js
   Actions.js
   Config.js

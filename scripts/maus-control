@@ -494,6 +494,61 @@ print(json.dumps(sidecar))
 '
 }
 
+# ---------------------------------------------------------------- scroll
+#
+# Wheel speed has no runtime and no state file: it is one hl.device call per
+# device, applied at load from the generated Lua. The only thing the helper
+# does here is the live preview, so a slider drag can be felt before Apply.
+
+cmd_scroll() {
+  case "${1:-}" in
+    preview) scroll_preview ;;
+    *) die "scroll: expected preview" ;;
+  esac
+}
+
+# Apply one scroll factor to one device, now, without touching any file.
+# The request arrives on stdin as JSON so that neither the device name nor
+# the number is ever a shell word.
+scroll_preview() {
+  local lua
+  lua="$(head -c 4096 | python3 -c '
+import json, sys
+
+def lua_string(value):
+    out = []
+    for char in value:
+        point = ord(char)
+        if char == "\\": out.append("\\\\")
+        elif char == "\"": out.append("\\\"")
+        elif char == "\n": out.append("\\n")
+        elif char == "\r": out.append("\\r")
+        elif char == "\t": out.append("\\t")
+        elif point < 0x20 or point == 0x7f: out.append("\\%d" % point)
+        else: out.append(char)
+    return "\"" + "".join(out) + "\""
+
+try:
+    request = json.load(sys.stdin)
+    name = request["device"]
+    factor = float(request["factor"])
+except Exception:
+    sys.exit("scroll preview: expected {\"device\": ..., \"factor\": ...}")
+
+if not isinstance(name, str) or not name or len(name) > 128:
+    sys.exit("scroll preview: implausible device name")
+# The same bounds Scroll.js clamps to. libinput takes any positive number,
+# so anything outside these is a bug or a probe, not a setting.
+if not (0.1 <= factor <= 4.0):
+    sys.exit("scroll preview: factor out of range")
+
+print("hl.device({ name = %s, scroll_factor = %.2f })"
+      % (lua_string(name), factor))
+')" || exit 1
+
+  hyprctl eval "$lua" >/dev/null 2>&1 || die "scroll preview: hyprctl eval failed"
+}
+
 # Float and size the panel window.
 #
 # A `float` window rule would be the obvious way to do this and it does not
@@ -596,6 +651,7 @@ case "${1:-}" in
   float)   cmd_float ;;
   learn)   shift; cmd_learn "$@" ;;
   dpi)     shift; cmd_dpi "$@" ;;
+  scroll)  shift; cmd_scroll "$@" ;;
   paths)   cmd_paths ;;
   status)  cmd_status ;;
   *)
@@ -616,6 +672,7 @@ usage: maus-control <command>
                     remember a DPI switch and show it on screen
   dpi preview       apply one sensitivity live, from JSON on stdin
   dpi status        the generated DPI presets and the current one, as JSON
+  scroll preview    apply one wheel-speed factor live, from JSON on stdin
   paths             the paths this plugin uses, as JSON
   status            what is installed and how many binds are live
 USAGE
