@@ -9,7 +9,7 @@ import "Profiles.js" as Profiles
 import "Leaders.js" as Leaders
 import "Actions.js" as Actions
 import "Config.js" as Config
-import "Dpi.js" as Dpi
+import "Sens.js" as Sens
 import "Scroll.js" as Scroll
 
 // Maus Control — see what every button on your mouse does, and change it.
@@ -126,128 +126,142 @@ Item {
   }
 
   function resolvedFor(code) {
-    // The device's presets, so a DPI button's chip reads "Sniper · 400
+    // The device's presets, so a preset button's chip reads "Sniper · 400
     // DPI" rather than the catalogue's generic row title — and so a button
     // aimed at a preset that has since been deleted shows as unmapped here
     // instead of only being reported at Apply. No slot: this is the panel
     // asking what a binding is called, not the generator asking what to
     // emit for it.
     configRev
-    return Actions.resolve(bindingFor(code), { dpi: dpiOn ? dpiConfig : null })
+    return Actions.resolve(bindingFor(code), { sens: sensOn ? sensConfig : null })
   }
 
-  // ------------------------------------------------------------ dpi
+  // ------------------------------------------------------------ sens
   //
-  // Pointer speed for this mouse, in DPI. See Dpi.js for why a compositor
-  // sensitivity can be talked about in DPI at all, and why presets pin the
-  // flat acceleration profile to make that true.
+  // Pointer sensitivity for this mouse: the raw libinput value, the
+  // acceleration profile it is read under, and the mouse's own DPI as a
+  // reference for the readout. See Sens.js.
 
-  property bool dpiOpen: false
+  property bool sensOpen: false
 
   // Which preset is applied right now, per Hyprland device name, read back
-  // from the runtime on open. It can differ from the config when a DPI
+  // from the runtime on open. It can differ from the config when a preset
   // button has been pressed since the last Apply, and showing the config's
   // idea instead would be showing something that is not on screen.
-  property var dpiLive: ({})
+  property var sensLive: ({})
 
   // The preset the user is currently editing in the sidebar. Not persisted:
   // it is a cursor, not a setting.
-  property int dpiEditing: -1
+  property int sensEditing: -1
 
-  readonly property var dpiConfig: {
+  readonly property var sensConfig: {
     configRev
-    return Dpi.normalize(Config.deviceEntry(config, deviceKey).dpi)
+    return Sens.normalize(Config.deviceEntry(config, deviceKey).sens)
   }
 
-  readonly property bool dpiOn: dpiConfig.enabled && dpiConfig.presets.length > 0
+  readonly property bool sensOn: sensConfig.enabled && sensConfig.presets.length > 0
 
   // What the pointer is actually doing, which is the runtime's answer when
   // it has one and the config's otherwise.
-  readonly property int dpiCurrent: {
+  readonly property int sensCurrent: {
     configRev
-    var live = device && device.hyprName ? dpiLive[device.hyprName] : undefined
-    if (live !== undefined && live >= 0 && live < dpiConfig.presets.length) return live
-    return dpiConfig.active
+    var live = device && device.hyprName ? sensLive[device.hyprName] : undefined
+    if (live !== undefined && live >= 0 && live < sensConfig.presets.length) return live
+    return sensConfig.active
   }
 
-  readonly property var dpiPreset: dpiOn && dpiCurrent < dpiConfig.presets.length
-    ? dpiConfig.presets[dpiCurrent] : null
+  readonly property var sensPreset: sensOn && sensCurrent < sensConfig.presets.length
+    ? sensConfig.presets[sensCurrent] : null
 
-  // The sidebar has one slot, so opening DPI puts the button inspector
-  // away rather than fighting it for the space.
-  function openDpi() {
+  // The active preset in the unit its profile implies: effective DPI under
+  // flat, the raw value under adaptive.
+  readonly property string sensPresetText: sensPreset
+    ? Sens.presetLabel(sensPreset, sensConfig.profile, sensConfig.sensor) : ""
+
+  // The sidebar has one slot, so opening sensitivity puts the button
+  // inspector away rather than fighting it for the space.
+  function openSens() {
     selectedCode = -1
     capturing = false
     scrollOpen = false
-    dpiOpen = true
+    sensOpen = true
   }
 
-  // Every DPI edit goes through here and hands the stored value straight
-  // back, so callers preview from what they just wrote rather than reading
-  // it out of a property binding they have only just invalidated.
-  function writeDpi(next) {
+  // Every sensitivity edit goes through here and hands the stored value
+  // straight back, so callers preview from what they just wrote rather than
+  // reading it out of a property binding they have only just invalidated.
+  function writeSens(next) {
     if (!deviceKey) return next
     if (!config.devices[deviceKey]) config.devices[deviceKey] = Config.blankEntry()
-    config.devices[deviceKey].dpi = next
+    config.devices[deviceKey].sens = next
     configRev++
     dirty = true
     return next
   }
 
-  function setDpiEnabled(on) {
+  function setSensEnabled(on) {
     if (on) {
-      dpiEditing = -1
-      previewDpi(Dpi.activePreset(writeDpi(Dpi.enable(dpiConfig))))
+      sensEditing = -1
+      previewSens(Sens.activePreset(writeSens(Sens.enable(sensConfig))))
       say("")
       return
     }
-    // Presets and the chosen one are kept, so turning this back on
-    // restores what was there rather than reseeding from scratch.
-    writeDpi(Dpi.normalize({
-      base: dpiConfig.base, presets: dpiConfig.presets, active: dpiConfig.active
+    // Presets, the chosen one, the profile and the declared sensor are all
+    // kept, so turning this back on restores what was there rather than
+    // reseeding from scratch.
+    writeSens(Sens.normalize({
+      sensor: sensConfig.sensor, profile: sensConfig.profile,
+      presets: sensConfig.presets, active: sensConfig.active
     }))
-    say("Pointer speed handed back to Hyprland on the next Apply.")
+    say("Pointer sensitivity handed back to Hyprland on the next Apply.")
   }
 
-  // `preview` is false while a slider is still moving. Previewing spawns a
-  // process, and doing that on every frame of a drag would queue up more
-  // of them than the compositor ever gets to run; the release previews.
-  function setDpiBase(value, preview) {
-    var next = writeDpi(Dpi.withBase(dpiConfig, value))
-    if (preview) previewDpi(next.presets[dpiCurrent])
+  // The declared sensor only relabels presets, so this never changes feel.
+  // `preview` is false while the slider is still moving: previewing spawns
+  // a process, and the release previews.
+  function setSensSensor(value, preview) {
+    var next = writeSens(Sens.withSensor(sensConfig, value))
+    if (preview) previewSens(next.presets[sensCurrent])
   }
 
-  function selectDpiPreset(index) {
-    var next = Dpi.normalize(dpiConfig)
+  // Switching profile applies immediately, because the whole feel of the
+  // pointer changes with it.
+  function setSensProfile(profile) {
+    var next = writeSens(Sens.setProfile(sensConfig, profile))
+    previewSens(next.presets[sensCurrent])
+  }
+
+  function selectSensPreset(index) {
+    var next = Sens.normalize(sensConfig)
     if (index < 0 || index >= next.presets.length) return
     next.active = index
-    writeDpi(next)
+    writeSens(next)
     // The runtime's own idea has to move too, or the header would keep
-    // showing the preset a DPI button last selected.
+    // showing the preset a sensitivity button last selected.
     if (device && device.hyprName) {
       var live = ({})
-      for (var name in dpiLive) live[name] = dpiLive[name]
+      for (var name in sensLive) live[name] = sensLive[name]
       live[device.hyprName] = index
-      dpiLive = live
+      sensLive = live
     }
-    previewDpi(next.presets[index])
+    previewSens(next.presets[index])
   }
 
-  function editDpiPreset(index, patch, preview) {
-    var next = writeDpi(Dpi.setPreset(dpiConfig, index, patch))
-    if (preview && index === dpiCurrent) previewDpi(next.presets[index])
+  function editSensPreset(index, patch, preview) {
+    var next = writeSens(Sens.setPreset(sensConfig, index, patch))
+    if (preview && index === sensCurrent) previewSens(next.presets[index])
   }
 
-  function addDpiPreset() {
-    var next = writeDpi(Dpi.addPreset(dpiConfig))
-    dpiEditing = next.presets.length - 1
-    selectDpiPreset(dpiEditing)
+  function addSensPreset() {
+    var next = writeSens(Sens.addPreset(sensConfig))
+    sensEditing = next.presets.length - 1
+    selectSensPreset(sensEditing)
   }
 
-  function removeDpiPreset(index) {
-    var result = Dpi.removePreset(dpiConfig, index)
+  function removeSensPreset(index) {
+    var result = Sens.removePreset(sensConfig, index)
     if (!result.remap) return
-    writeDpi(result.dpi)
+    writeSens(result.sens)
 
     // A button is bound to a preset by index, so removing one moves the
     // ground under every binding that pointed past it. Left alone, a
@@ -259,23 +273,23 @@ Item {
     // deleting somebody's binding is no better than silently moving it,
     // and this way there is something to see and correct.
     var entry = Config.deviceEntry(config, deviceKey)
-    var last = Math.max(0, result.dpi.presets.length - 1)
+    var last = Math.max(0, result.sens.presets.length - 1)
     var moved = 0
     var orphaned = 0
     for (var code in entry.bindings) {
       if (!Object.prototype.hasOwnProperty.call(entry.bindings, code)) continue
       var binding = entry.bindings[code]
       var spec = Actions.byId(binding.action)
-      if (!spec || spec.kind !== "dpi" || !spec.custom) continue
+      if (!spec || spec.kind !== "sens" || !spec.custom) continue
       var target = result.remap[binding.preset]
       if (target === undefined) continue
       if (target < 0) { binding.preset = Math.min(index, last); orphaned++ }
       else if (target !== binding.preset) { binding.preset = target; moved++ }
     }
 
-    dpiEditing = -1
+    sensEditing = -1
     configRev++
-    previewDpi(Dpi.activePreset(result.dpi))
+    previewSens(Sens.activePreset(result.sens))
 
     if (orphaned > 0) {
       say(orphaned + " button" + (orphaned === 1 ? "" : "s") +
@@ -285,52 +299,56 @@ Item {
     }
   }
 
-  // Apply one preset to the running compositor without writing anything,
-  // so dragging the slider is something you can feel. Nothing is persisted
-  // until Apply, which is the same promise the rest of the panel makes.
-  function previewDpi(preset) {
-    if (!preset || !device || !device.hyprName || dpiPreviewProc.running) return
-    var sensitivity = Dpi.sensitivityFor(preset.dpi, dpiConfig.base)
-    if (sensitivity === null) return
-    dpiPreviewProc.payload = JSON.stringify({ device: device.hyprName, sensitivity: sensitivity })
-    dpiPreviewProc.stdinEnabled = true
-    dpiPreviewProc.running = true
+  // Apply one preset to the running compositor without writing anything, so
+  // dragging a slider is something you can feel. The device's profile goes
+  // with it, so a preview under adaptive is not shown flat. Nothing is
+  // persisted until Apply, which is the same promise the rest of the panel
+  // makes.
+  function previewSens(preset) {
+    if (!preset || !device || !device.hyprName || sensPreviewProc.running) return
+    sensPreviewProc.payload = JSON.stringify({
+      device: device.hyprName,
+      sensitivity: preset.sensitivity,
+      profile: sensConfig.profile
+    })
+    sensPreviewProc.stdinEnabled = true
+    sensPreviewProc.running = true
   }
 
   Process {
-    id: dpiPreviewProc
+    id: sensPreviewProc
     property string payload: ""
-    command: [root.helper, "dpi", "preview"]
+    command: [root.helper, "sens", "preview"]
     stdinEnabled: false
     onStarted: {
-      dpiPreviewProc.write(dpiPreviewProc.payload)
-      dpiPreviewProc.stdinEnabled = false
+      sensPreviewProc.write(sensPreviewProc.payload)
+      sensPreviewProc.stdinEnabled = false
     }
   }
 
   // Which preset the runtime is actually on, watched rather than polled.
   //
-  // Pressing a DPI button on the mouse while this panel is open has to
+  // Pressing a sensitivity button on the mouse while this panel is open has to
   // move the readout in the header — otherwise the panel is showing a
   // number that is no longer true, which is worse than showing none.
   // The generated Lua and the helper both write this file, so watching it
   // catches a switch from either.
   FileView {
-    id: dpiActiveFile
-    path: root.dpiActivePath
+    id: sensActiveFile
+    path: root.sensActivePath
     watchChanges: true
     printErrors: false
-    onLoaded: root.readDpiActive(text())
+    onLoaded: root.readSensActive(text())
     // `text()` is stale inside the change signal itself, so both paths go
     // back through onLoaded with fresh content.
     onFileChanged: reload()
-    onLoadFailed: root.dpiLive = ({})
+    onLoadFailed: root.sensLive = ({})
   }
 
   // slot -> preset index, keyed back to the Hyprland device name through
   // the same slot table the generator numbered the file with.
-  function readDpiActive(text) {
-    var slots = Config.dpiSlots(devices, config, Dpi).slots
+  function readSensActive(text) {
+    var slots = Config.sensSlots(devices, config, Sens).slots
     var live = ({})
     var lines = String(text || "").split("\n")
     for (var i = 0; i < lines.length; i++) {
@@ -342,7 +360,7 @@ Item {
       var resolved = slots[slot - 1]
       if (resolved) live[resolved.name] = index - 1
     }
-    dpiLive = live
+    sensLive = live
   }
 
   // ------------------------------------------------------------ scroll
@@ -363,11 +381,11 @@ Item {
   readonly property string scrollReadout: Scroll.factorLabel(scrollConfig.factor)
 
   // The sidebar has one slot, so opening wheel speed puts the button
-  // inspector and the DPI sidebar away rather than fighting them for it.
+  // inspector and the sensitivity sidebar away rather than fighting them for it.
   function openScroll() {
     selectedCode = -1
     capturing = false
-    dpiOpen = false
+    sensOpen = false
     scrollOpen = true
   }
 
@@ -565,10 +583,10 @@ Item {
       mods: current.mods || [],
       key: current.key || "",
       command: current.command || "",
-      // A newly chosen DPI action points at the preset that is live, which
+      // A newly chosen sensitivity action points at the preset that is live, which
       // is the one the user just felt, rather than at whichever preset an
       // unrelated earlier binding happened to name.
-      preset: current.preset === undefined ? dpiCurrent : current.preset
+      preset: current.preset === undefined ? sensCurrent : current.preset
     }
     Config.setBinding(config, deviceKey, code, next)
     configRev++
@@ -587,7 +605,7 @@ Item {
     })
     configRev++
     dirty = true
-    previewDpi(dpiConfig.presets[index])
+    previewSens(sensConfig.presets[index])
   }
 
   function setChord(code, mods, key) {
@@ -714,8 +732,8 @@ Item {
   readonly property string configPath: Quickshell.env("HOME") + "/.config/omarchy/maus-control.json"
   readonly property string hyprPath: Quickshell.env("HOME") + "/.config/hypr/bindings.lua"
   readonly property string luaPath: stateDir + "/bindings.lua"
-  readonly property string dpiPath: stateDir + "/dpi.json"
-  readonly property string dpiActivePath: stateDir + "/dpi-active"
+  readonly property string sensPath: stateDir + "/sens.json"
+  readonly property string sensActivePath: stateDir + "/sens-active"
 
   function applyDetect(raw) {
     var payload
@@ -798,19 +816,19 @@ Item {
       if (readConfigProc.buffer.trim() !== "") {
         try { parsed = JSON.parse(readConfigProc.buffer) } catch (e) { parsed = null }
       }
-      root.config = Config.normalize(parsed, Dpi, Scroll)
+      root.config = Config.normalize(parsed, Sens, Scroll)
       root.configRev++
       root.refresh()
     }
   }
 
   // Writing is a small pipeline: config JSON, the generated Lua, the two
-  // DPI files it reads, then the loader line in the user's bindings.lua,
+  // sensitivity files it reads, then the loader line in the user's bindings.lua,
   // then a reload. Each step only runs if the one before it succeeded, so
   // a failure never leaves Hyprland pointed at a file that was not written.
   property string pendingLua: ""
-  property string pendingDpi: ""
-  property string pendingDpiActive: ""
+  property string pendingSens: ""
+  property string pendingSensActive: ""
   property string pendingHypr: ""
   property int applyStage: 0
 
@@ -818,19 +836,19 @@ Item {
   // about what this version would generate — that comparison is how a
   // stale generated file is noticed at all.
   function generate() {
-    return Config.generateLua(devices, config, Actions, Dpi, Scroll, helper)
+    return Config.generateLua(devices, config, Actions, Sens, Scroll, helper)
   }
 
   function applyNow() {
     if (!device) return
     var generated = generate()
     pendingLua = generated.text
-    pendingDpi = JSON.stringify(Dpi.sidecar(generated.dpi), null, 2) + "\n"
+    pendingSens = JSON.stringify(Sens.sidecar(generated.sens), null, 2) + "\n"
     // Apply is authoritative about which preset is selected. Without
     // writing this the generated file would set the preset the panel asked
-    // for and then read the preset a DPI button last chose, and the panel
+    // for and then read the preset a sensitivity button last chose, and the panel
     // would appear to do nothing at all.
-    pendingDpiActive = Dpi.activeFile(generated.dpi)
+    pendingSensActive = Sens.activeFile(generated.sens)
 
     if (generated.skipped.length > 0) {
       say(generated.skipped[0].reason, true)
@@ -872,8 +890,8 @@ Item {
     }
   }
 
-  // Stages, in order: 1 config written -> 2 lua written -> 3 dpi.json
-  // written -> 4 dpi-active written -> 5 backup taken -> 6 bindings.lua
+  // Stages, in order: 1 config written -> 2 lua written -> 3 sens.json
+  // written -> 4 sens-active written -> 5 backup taken -> 6 bindings.lua
   // read and hooked -> 7 reload. Each step is only reached from the
   // success path of the one before it.
   function advanceApply() {
@@ -882,10 +900,10 @@ Item {
       writeFile(luaPath, pendingLua)
     } else if (applyStage === 2) {
       applyStage = 3
-      writeFile(dpiPath, pendingDpi)
+      writeFile(sensPath, pendingSens)
     } else if (applyStage === 3) {
       applyStage = 4
-      writeFile(dpiActivePath, pendingDpiActive)
+      writeFile(sensActivePath, pendingSensActive)
     } else if (applyStage === 4) {
       applyStage = 5
       backupProc.running = true
@@ -1239,7 +1257,7 @@ Item {
         if (event.key === Qt.Key_Escape) {
           if (root.dragging) root.cancelDrag()
           else if (root.selectedCode >= 0) root.selectedCode = -1
-          else if (root.dpiOpen) root.dpiOpen = false
+          else if (root.sensOpen) root.sensOpen = false
           else if (root.scrollOpen) root.scrollOpen = false
           else root.requestClose()
           event.accepted = true
@@ -1316,7 +1334,7 @@ Item {
                 visible: root.battery !== null
                 text: {
                   if (!root.battery) return ""
-                  // Written as characters, not escapes; see the DPI glyph below.
+                  // Written as characters, not escapes; see the mouse glyph below.
                   var glyph = root.battery.charging ? "" : ""
                   return glyph + "  " + Devices.batteryLabel(root.battery)
                 }
@@ -1326,18 +1344,18 @@ Item {
                 font.weight: Font.DemiBold
               }
 
-              // The live DPI, which changes under you when a DPI button is
+              // The live sensitivity, which changes under you when a sensitivity button is
               // pressed, so it belongs beside the mouse's name rather than
               // buried in the sidebar that sets it.
               Text {
-                visible: root.dpiPreset !== null
+                visible: root.sensPreset !== null
                 text: "·"
                 color: Color.muted
                 font.family: Style.font.family
                 font.pixelSize: Style.font.bodySmall
               }
               Text {
-                visible: root.dpiPreset !== null
+                visible: root.sensPreset !== null
                 // nf-md-mouse, the same glyph the bar widget uses.
                 //
                 // Every icon glyph in this plugin is written as the character
@@ -1346,8 +1364,9 @@ Item {
                 // U+FFFF cannot be spelled that way at all: "\uf037d" is
                 // U+F037 followed by a literal "d". Writing the character
                 // makes that mistake unavailable.
-                text: root.dpiPreset
-                  ? "󰍽  " + root.dpiPreset.dpi + " DPI · " + root.dpiPreset.name : ""
+                // The active preset, in whatever unit its profile implies.
+                text: root.sensPresetText !== ""
+                  ? "󰍽  " + root.sensPresetText : ""
                 color: Color.accent
                 font.family: Style.font.family
                 font.pixelSize: Style.font.bodySmall
@@ -1357,7 +1376,7 @@ Item {
                   anchors.fill: parent
                   hoverEnabled: true
                   cursorShape: Qt.PointingHandCursor
-                  onClicked: root.openDpi()
+                  onClicked: root.openSens()
                 }
               }
 
@@ -1799,17 +1818,17 @@ Item {
             }
           }
 
-          // -------------------------------------------- dpi
+          // -------------------------------------------- sens
           Rectangle {
             Layout.preferredWidth: 340
             Layout.fillHeight: true
-            visible: root.dpiOpen && !root.learning && root.selectedCode < 0
+            visible: root.sensOpen && !root.learning && root.selectedCode < 0
             radius: Style.cornerRadius > 0 ? Style.cornerRadius : 6
             color: Qt.rgba(Color.foreground.r, Color.foreground.g, Color.foreground.b, 0.035)
             border.width: 1
             border.color: Qt.rgba(Color.foreground.r, Color.foreground.g, Color.foreground.b, 0.12)
 
-            DpiPanel {
+            SensPanel {
               anchors.fill: parent
               anchors.margins: Style.space(4)
               panel: root
@@ -1873,12 +1892,12 @@ Item {
           }
 
           Ui.Button {
-            text: "DPI"
+            text: "Sens"
             bordered: true
-            selected: root.dpiOpen
+            selected: root.sensOpen
             enabled: !root.learning
-            tooltipText: "Named pointer speeds you can switch between, and a button to switch them with."
-            onClicked: root.dpiOpen ? root.dpiOpen = false : root.openDpi()
+            tooltipText: "Pointer sensitivity: acceleration profile, sensor DPI, and presets to switch between."
+            onClicked: root.sensOpen ? root.sensOpen = false : root.openSens()
           }
           Ui.Button {
             text: "Scroll"
@@ -1934,7 +1953,7 @@ Item {
     draftCommand = bindingFor(code).command || ""
     capturing = false
     // One sidebar, one occupant.
-    dpiOpen = false
+    sensOpen = false
     scrollOpen = false
   }
 

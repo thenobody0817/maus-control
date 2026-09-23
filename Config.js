@@ -48,17 +48,27 @@ function validKey(key) {
 // The shape every device entry has. One definition, because an entry built
 // without a `layout` reads back as a device whose buttons have no places.
 function blankEntry() {
-  return { label: "", learned: [], layout: {}, bindings: {}, dpi: null, scroll: null }
+  return { label: "", learned: [], layout: {}, bindings: {}, sens: null, scroll: null }
+}
+
+// Button actions from before the sensitivity rework. A config written then
+// names them dpi-*; they are remapped on read so an existing button keeps
+// doing exactly what it did.
+var LEGACY_ACTIONS = {
+  "dpi-cycle": "sens-cycle",
+  "dpi-cycle-back": "sens-cycle-back",
+  "dpi-preset": "sens-preset",
+  "dpi-sniper": "sens-sniper"
 }
 
 // Accept whatever is on disk and return something the UI can rely on.
 // Unknown keys are dropped rather than preserved: this file is generated
 // from the panel, and silently carrying junk forward hides bugs.
 //
-// `Dpi` and `Scroll` are passed in rather than imported so this file stays
+// `Sens` and `Scroll` are passed in rather than imported so this file stays
 // loadable from a node test without QML's import machinery, the same reason
 // generateLua takes `Actions`.
-function normalize(raw, Dpi, Scroll) {
+function normalize(raw, Sens, Scroll) {
   var out = defaults()
   if (!raw || typeof raw !== "object") return out
 
@@ -71,7 +81,12 @@ function normalize(raw, Dpi, Scroll) {
     var entry = devices[key] || {}
     var clean = blankEntry()
     clean.label = String(entry.label || "")
-    if (Dpi) clean.dpi = Dpi.normalize(entry.dpi)
+    if (Sens) {
+      // A device set up before the rework has a `dpi` block; Sens.normalize
+      // converts it. The old key is not carried forward, so the next Apply
+      // writes the new shape and the migration is done.
+      clean.sens = Sens.normalize(entry.sens !== undefined ? entry.sens : entry.dpi)
+    }
     if (Scroll) clean.scroll = Scroll.normalize(entry.scroll)
 
     // code -> place id, recorded by the guided pass. Places are validated
@@ -104,13 +119,17 @@ function normalize(raw, Dpi, Scroll) {
       if (!validTrigger(parsed)) continue
       var binding = bindings[codeKey] || {}
       if (!binding.action || binding.action === "none") continue
-      // The DPI preset a button jumps to is an index into this device's
-      // preset list. Out of range is left as-is here and reported by
-      // Actions.resolve, which is the only place that knows how many
+      // A button written before the rework names a dpi-* action; remap it
+      // so it goes on doing the same thing.
+      var action = String(binding.action)
+      if (LEGACY_ACTIONS[action]) action = LEGACY_ACTIONS[action]
+      // The sensitivity preset a button jumps to is an index into this
+      // device's preset list. Out of range is left as-is here and reported
+      // by Actions.resolve, which is the only place that knows how many
       // presets the device actually has.
       var preset = parseInt(binding.preset, 10)
       clean.bindings[String(parsed)] = {
-        action: String(binding.action),
+        action: action,
         mods: Array.isArray(binding.mods) ? binding.mods.map(String) : [],
         key: binding.key ? String(binding.key) : "",
         command: binding.command ? String(binding.command) : "",
@@ -161,27 +180,29 @@ var HEADER = [
   ""
 ].join("\n")
 
-// The DPI runtime.
+// The sensitivity runtime.
 //
 // Everything a preset needs at press time happens in this file: the
-// sensitivity tables are precomputed by Dpi.js, so switching a preset is
-// one hl.device call with no process to spawn and no arithmetic to redo.
-// The helper is only asked to persist the choice and draw the OSD, which
-// can happen a few milliseconds later without anyone noticing.
+// sensitivity tables and the acceleration profile are precomputed by
+// Sens.js, so switching a preset is one hl.device call with no process to
+// spawn and no arithmetic to redo. The helper is only asked to persist the
+// choice and draw the OSD, which can happen a few milliseconds later
+// without anyone noticing.
 //
 // Devices are addressed by slot number rather than by name, so the only
 // thing that ever reaches a command line is an integer. The helper looks
-// the slot up in dpi.json, written beside this file by the same Apply.
-function dpiPreamble(slots, Actions, Dpi, helperPath) {
+// the slot up in sens.json, written beside this file by the same Apply.
+function sensPreamble(slots, Actions, Sens, helperPath) {
   var lines = [
-    "-- ---------------------------------------------------------------- DPI",
+    "-- ---------------------------------------------------------- sensitivity",
     "--",
-    "-- Pointer speed per device, as libinput accel speeds under the flat",
-    "-- profile, where the factor is exactly 1 + speed. See Dpi.js.",
+    "-- Pointer sensitivity per device, as libinput accel speeds under the",
+    "-- device's own profile. See Sens.js.",
     "",
     "local mc_names, mc_sens = {}, {}",
+    "local mc_profile = {}",
     "local mc_active, mc_held = {}, {}",
-    "local mc_state = (os.getenv(\"HOME\") or \"\") .. \"/.local/state/maus-control/dpi-active\"",
+    "local mc_state = (os.getenv(\"HOME\") or \"\") .. \"/.local/state/maus-control/sens-active\"",
     "local mc_helper = " + Actions.luaString(helperPath),
     "",
     "-- The chosen preset outlives a reload. Without this, changing an",
@@ -203,7 +224,7 @@ function dpiPreamble(slots, Actions, Dpi, helperPath) {
     "  if not steps then return end",
     "  local index = mc_held[slot] or mc_active[slot] or 1",
     "  if steps[index] == nil then index = 1 end",
-    "  hl.device({ name = mc_names[slot], accel_profile = \"flat\", sensitivity = steps[index] })",
+    "  hl.device({ name = mc_names[slot], accel_profile = mc_profile[slot], sensitivity = steps[index] })",
     "end",
     "",
     "-- A path with a space or a quote in it is still one argument.",
@@ -217,7 +238,7 @@ function dpiPreamble(slots, Actions, Dpi, helperPath) {
     "  mc_active[slot] = index",
     "  mc_held[slot] = nil",
     "  mc_apply(slot)",
-    "  hl.dispatch(hl.dsp.exec_cmd(mc_quote(mc_helper) .. \" dpi note \" .. slot .. \" \" .. index))",
+    "  hl.dispatch(hl.dsp.exec_cmd(mc_quote(mc_helper) .. \" sens note \" .. slot .. \" \" .. index))",
     "end",
     "",
     "-- Lua's % is floored, so a step of -1 from the first preset lands on",
@@ -249,9 +270,12 @@ function dpiPreamble(slots, Actions, Dpi, helperPath) {
     var slot = slots[i]
     var n = i + 1
     var sens = []
-    for (var p = 0; p < slot.presets.length; p++) sens.push(Dpi.luaSensitivity(slot.presets[p].sensitivity))
-    lines.push(Actions.luaComment(slot.label + "  [" + slot.name + "]  base " + slot.base + " DPI"))
+    for (var p = 0; p < slot.presets.length; p++) sens.push(Sens.luaSensitivity(slot.presets[p].sensitivity))
+    lines.push(Actions.luaComment(slot.label + "  [" + slot.name + "]  " + slot.profile
+      + ", " + slot.presets.length + " preset" + (slot.presets.length === 1 ? "" : "s")
+      + ", sensor " + slot.sensor + " DPI"))
     lines.push("mc_names[" + n + "] = " + Actions.luaString(slot.name))
+    lines.push("mc_profile[" + n + "] = " + Actions.luaString(slot.profile))
     lines.push("mc_sens[" + n + "] = { " + sens.join(", ") + " }")
     // A stale state file can name a preset that has since been deleted.
     lines.push("if mc_sens[" + n + "][mc_active[" + n + "] or 0] == nil then mc_active[" + n + "] = " + (slot.active + 1) + " end")
@@ -262,27 +286,27 @@ function dpiPreamble(slots, Actions, Dpi, helperPath) {
   return lines.join("\n")
 }
 
-// Which devices get a DPI runtime slot, in the order the generated file
-// numbers them.
+// Which devices get a sensitivity runtime slot, in the order the generated
+// file numbers them.
 //
 // The generator emits from this and the panel reads the runtime's state
 // file through it, so "slot 2" means the same mouse to both. Working it
 // out twice is exactly how the two would drift the first time a device
 // stopped qualifying for a reason only one of them knew about.
 //
-// Returns { slots, byKey, skipped } — slots[i] is the resolved DPI for
+// Returns { slots, byKey, skipped } — slots[i] is the resolved profile for
 // slot i+1, byKey maps a device key to its slot number, and skipped
 // carries devices that wanted a slot and could not have one.
-function dpiSlots(devices, config, Dpi) {
+function sensSlots(devices, config, Sens) {
   var slots = []
   var byKey = {}
   var skipped = []
   var list = devices || []
-  if (!Dpi) return { slots: slots, byKey: byKey, skipped: skipped }
+  if (!Sens) return { slots: slots, byKey: byKey, skipped: skipped }
 
   for (var i = 0; i < list.length; i++) {
     var device = list[i]
-    var resolved = Dpi.resolve(device, deviceEntry(config, device.key).dpi)
+    var resolved = Sens.resolve(device, deviceEntry(config, device.key).sens)
     if (resolved.empty) continue
     if (!resolved.ok) {
       skipped.push({ device: device.key, reason: resolved.error })
@@ -297,10 +321,10 @@ function dpiSlots(devices, config, Dpi) {
 // ------------------------------------------------------------ scroll
 
 // Which devices get a wheel-speed line, in the order the generated file
-// writes them. Simpler than DPI: there is one number per device and no
-// runtime, so a device that resolves to nothing is simply not emitted.
+// writes them. Simpler than sensitivity: there is one number per device and
+// no runtime, so a device that resolves to nothing is simply not emitted.
 //
-// Returns { slots, byKey, skipped } to match dpiSlots, though only `slots`
+// Returns { slots, byKey, skipped } to match sensSlots, though only `slots`
 // and `skipped` are used.
 function scrollSlots(devices, config, Scroll) {
   var slots = []
@@ -352,31 +376,31 @@ function scrollPreamble(slots, Actions, Scroll) {
 //   devices  discovery output, for the Hyprland device name and the label
 //   config   normalized config
 //   Actions  the Actions module (passed in so this file stays importable
-//   Dpi      from node tests without QML's import machinery)
+//   Sens     from node tests without QML's import machinery)
 //   Scroll   the same, for wheel speed
-//   helper   absolute path to scripts/maus-control, which the DPI binds call
-//            to persist a switch and draw the OSD
+//   helper   absolute path to scripts/maus-control, which the sensitivity
+//            binds call to persist a switch and draw the OSD
 //
-// Returns { text, binds, skipped, dpi, scroll } — `skipped` explains
-// anything dropped so the panel can say why a mapping is not live; `dpi` is
-// the resolved per-device preset list, in the same slot order the generated
-// binds use, so the panel can write the sidecar the helper reads.
-function generateLua(devices, config, Actions, Dpi, Scroll, helper) {
+// Returns { text, binds, skipped, sens, scroll } — `skipped` explains
+// anything dropped so the panel can say why a mapping is not live; `sens`
+// is the resolved per-device preset list, in the same slot order the
+// generated binds use, so the panel can write the sidecar the helper reads.
+function generateLua(devices, config, Actions, Sens, Scroll, helper) {
   var lines = [HEADER]
   var binds = 0
   var skipped = []
   var claimed = {}
   var list = devices || []
 
-  // Pointer speed first: a button bound to a DPI preset compiles to a call
-  // into the runtime this sets up, so the slots have to exist before the
-  // binds that reference them are read.
-  var dpi = dpiSlots(list, config, Dpi)
-  for (var s = 0; s < dpi.skipped.length; s++) skipped.push(dpi.skipped[s])
-  if (dpi.slots.length > 0) lines.push(dpiPreamble(dpi.slots, Actions, Dpi, helper))
+  // Sensitivity first: a button bound to a preset compiles to a call into
+  // the runtime this sets up, so the slots have to exist before the binds
+  // that reference them are read.
+  var sens = sensSlots(list, config, Sens)
+  for (var s = 0; s < sens.skipped.length; s++) skipped.push(sens.skipped[s])
+  if (sens.slots.length > 0) lines.push(sensPreamble(sens.slots, Actions, Sens, helper))
 
-  // Wheel speed is applied after the DPI runtime, so a switch cannot be
-  // mistaken for it and it survives one untouched.
+  // Wheel speed is applied after the sensitivity runtime, so a switch cannot
+  // be mistaken for it and it survives one untouched.
   var scroll = scrollSlots(list, config, Scroll)
   for (var w = 0; w < scroll.skipped.length; w++) skipped.push(scroll.skipped[w])
   if (scroll.slots.length > 0) lines.push(scrollPreamble(scroll.slots, Actions, Scroll))
@@ -384,8 +408,8 @@ function generateLua(devices, config, Actions, Dpi, Scroll, helper) {
   for (var d = 0; d < list.length; d++) {
     var device = list[d]
     var entry = deviceEntry(config, device.key)
-    var dpiSlot = dpi.byKey[device.key] || 0
-    var dpiResolved = dpiSlot > 0 ? dpi.slots[dpiSlot - 1] : null
+    var sensSlot = sens.byKey[device.key] || 0
+    var sensResolved = sensSlot > 0 ? sens.slots[sensSlot - 1] : null
     var codes = []
     for (var codeKey in entry.bindings) {
       if (Object.prototype.hasOwnProperty.call(entry.bindings, codeKey)) codes.push(parseInt(codeKey, 10))
@@ -404,7 +428,7 @@ function generateLua(devices, config, Actions, Dpi, Scroll, helper) {
 
     for (var c = 0; c < codes.length; c++) {
       var code = codes[c]
-      var resolved = Actions.resolve(entry.bindings[String(code)], { dpi: dpiResolved, dpiSlot: dpiSlot })
+      var resolved = Actions.resolve(entry.bindings[String(code)], { sens: sensResolved, sensSlot: sensSlot })
       if (!resolved.ok) {
         skipped.push({ device: device.key, code: code, reason: resolved.error || "incomplete binding" })
         continue
@@ -475,8 +499,8 @@ function generateLua(devices, config, Actions, Dpi, Scroll, helper) {
     lines.push("")
   }
 
-  if (binds === 0 && dpi.slots.length === 0 && scroll.slots.length === 0) lines.push("-- Nothing mapped.")
-  return { text: lines.join("\n") + "\n", binds: binds, skipped: skipped, dpi: dpi.slots, scroll: scroll.slots }
+  if (binds === 0 && sens.slots.length === 0 && scroll.slots.length === 0) lines.push("-- Nothing mapped.")
+  return { text: lines.join("\n") + "\n", binds: binds, skipped: skipped, sens: sens.slots, scroll: scroll.slots }
 }
 
 // ------------------------------------------------------------ hook line
@@ -560,7 +584,7 @@ if (typeof module !== "undefined") {
     bindingFor: bindingFor,
     setBinding: setBinding,
     countBindings: countBindings,
-    dpiSlots: dpiSlots,
+    sensSlots: sensSlots,
     scrollSlots: scrollSlots,
     generateLua: generateLua,
     hookBlock: hookBlock,

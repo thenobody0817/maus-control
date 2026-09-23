@@ -2,11 +2,11 @@ const assert = require("assert")
 const A = require("../Actions.js")
 const C = require("../Config.js")
 const D = require("../Devices.js")
-const Dpi = require("../Dpi.js")
+const Sens = require("../Sens.js")
 const Scroll = require("../Scroll.js")
 const fs = require("fs")
 
-// The path the generated DPI binds call back into.
+// The path the generated sensitivity binds call back into.
 const HELPER = "/home/somebody/.config/omarchy/plugins/x/scripts/maus-control"
 
 // ---------------------------------------------------------------- escaping
@@ -83,7 +83,7 @@ const dirty = {
     }
   }
 }
-const clean = C.normalize(dirty, Dpi)
+const clean = C.normalize(dirty, Sens)
 assert.deepStrictEqual(clean.devices["046d:4079:x"].learned, [272, 275, 276])
 assert.deepStrictEqual(Object.keys(clean.devices["046d:4079:x"].bindings).sort(), ["274", "275"])
 assert.deepStrictEqual(C.normalize(null), C.defaults())
@@ -111,7 +111,7 @@ const config = C.normalize({
     }
   }
 })
-const gen = C.generateLua(devices, config, A, Dpi, Scroll, HELPER)
+const gen = C.generateLua(devices, config, A, Sens, Scroll, HELPER)
 assert.strictEqual(gen.binds, 5)
 assert.strictEqual(gen.skipped.length, 0)
 assert.ok(gen.text.includes('device = { inclusive = true, list = { "logitech-g-pro--1" } }'), "scoped")
@@ -123,7 +123,7 @@ assert.ok(gen.text.includes('pcall(hl.unbind, "mouse:275")'), "idempotent unbind
 
 // A device Hyprland cannot name cannot be scoped, and must be reported
 // rather than silently bound to every pointer on the system.
-const unnamed = C.generateLua([{ key: "046d:4079:x", label: "X", hyprName: "" }], config, A, Dpi, Scroll, HELPER)
+const unnamed = C.generateLua([{ key: "046d:4079:x", label: "X", hyprName: "" }], config, A, Sens, Scroll, HELPER)
 assert.strictEqual(unnamed.binds, 0)
 assert.strictEqual(unnamed.skipped.length, 1)
 assert.ok(/cannot be scoped/.test(unnamed.skipped[0].reason))
@@ -140,7 +140,7 @@ const globalCfg = C.normalize({
     b: { bindings: { "275": { action: "copy" }, "276": { action: "paste" } } }
   }
 })
-const globalGen = C.generateLua(twoMice, globalCfg, A, Dpi, Scroll, HELPER)
+const globalGen = C.generateLua(twoMice, globalCfg, A, Sens, Scroll, HELPER)
 assert.strictEqual(globalGen.binds, 2, "duplicate global code emitted once")
 assert.strictEqual(globalGen.skipped.length, 1)
 assert.ok(/already bound globally/.test(globalGen.skipped[0].reason))
@@ -296,7 +296,7 @@ console.log("key capture: all assertions passed")
     "every captured trigger can carry a binding")
 
   const emitted = C.generateLua(
-    [{ key: "d", label: "M", hyprName: "m", hyprKbdName: "m-kbd" }], round, A, Dpi, Scroll, HELPER)
+    [{ key: "d", label: "M", hyprName: "m", hyprKbdName: "m-kbd" }], round, A, Sens, Scroll, HELPER)
   assert.strictEqual(emitted.binds, captured.length, "every captured trigger emits a bind")
   assert.ok(emitted.text.includes('hl.bind("code:11"'), "keystroke trigger emitted")
   assert.ok(emitted.text.includes('hl.bind("mouse:274"'), "mouse trigger emitted")
@@ -331,7 +331,7 @@ for (const id of [0, 0x10f, 0x120, 0xfff, C.KEY_BASE - 1, C.KEY_BASE + 256, NaN]
 // places, which reads as a mouse nobody ever detected.
 {
   const shape = Object.keys(C.blankEntry()).sort()
-  assert.deepStrictEqual(shape, ["bindings", "dpi", "label", "layout", "learned", "scroll"])
+  assert.deepStrictEqual(shape, ["bindings", "label", "layout", "learned", "scroll", "sens"])
   const config = C.defaults()
   C.setBinding(config, "new:device", 0x113, { action: "back", mods: [], key: "", command: "" })
   assert.deepStrictEqual(Object.keys(config.devices["new:device"]).sort(), shape)
@@ -341,7 +341,7 @@ for (const id of [0, 0x10f, 0x120, 0xfff, C.KEY_BASE - 1, C.KEY_BASE + 256, NaN]
 // ------------------------------------------------- comments are not code
 //
 // The generated file carries names nobody here chose: the device as
-// Hyprland reports it, a model string out of sysfs, a DPI preset the user
+// Hyprland reports it, a model string out of sysfs, a sensitivity preset the user
 // typed. They are written into `--` comment lines, and a comment ends at
 // the first newline — so a name carrying one would put whatever followed it
 // into a file the compositor executes.
@@ -357,12 +357,12 @@ for (const id of [0, 0x10f, 0x120, 0xfff, C.KEY_BASE - 1, C.KEY_BASE + 256, NaN]
     devices: { k: {
       label: hostile, learned: [274], layout: {},
       bindings: { "274": { action: "copy", mods: [], key: "", command: "" } },
-      dpi: { enabled: true, base: 1600, active: 0,
-             presets: [{ name: hostile, dpi: 800 }] }
+      sens: { enabled: true, sensor: 1600, profile: "flat", active: 0,
+              presets: [{ name: hostile, sensitivity: 0 }] }
     } }
-  })
+  }, Sens, Scroll)
 
-  const generated = C.generateLua(devices, config, A, Dpi, Scroll, HELPER)
+  const generated = C.generateLua(devices, config, A, Sens, Scroll, HELPER)
   const os2 = require("os"), path2 = require("path")
   const tmp = path2.join(os2.tmpdir(), "maus-control-comment-check.lua")
   fs.writeFileSync(tmp, generated.text)

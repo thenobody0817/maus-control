@@ -197,20 +197,20 @@ var ACTIONS = [
   { id: "none", group: "Default", label: "Leave alone", kind: "none",
     hint: "Button keeps whatever it does today. Nothing is bound." },
 
-  // -------------------------------------------------- pointer speed
+  // -------------------------------------------------- sensitivity
   //
-  // These compile to a call into the DPI runtime at the top of the
+  // These compile to a call into the sensitivity runtime at the top of the
   // generated file, which already holds this device's presets as a table
-  // of accel speeds. So a press is one hl.device call — no process to
-  // spawn, nothing to recompute — and the helper is only asked afterwards
-  // to remember the choice and draw the OSD.
-  { id: "dpi-cycle", group: "Pointer", label: "Next DPI preset", kind: "dpi", mode: "step", delta: 1,
-    hint: "Steps through this mouse's DPI presets, wrapping at the end." },
-  { id: "dpi-cycle-back", group: "Pointer", label: "Previous DPI preset", kind: "dpi", mode: "step", delta: -1,
+  // of accel speeds and the profile they apply under. So a press is one
+  // hl.device call — no process to spawn, nothing to recompute — and the
+  // helper is only asked afterwards to remember the choice and draw the OSD.
+  { id: "sens-cycle", group: "Sens", label: "Next preset", kind: "sens", mode: "step", delta: 1,
+    hint: "Steps through this mouse's sensitivity presets, wrapping at the end." },
+  { id: "sens-cycle-back", group: "Sens", label: "Previous preset", kind: "sens", mode: "step", delta: -1,
     hint: "The same, in the other direction." },
-  { id: "dpi-preset", group: "Pointer", label: "Switch to a preset…", kind: "dpi", mode: "select", custom: true,
+  { id: "sens-preset", group: "Sens", label: "Switch to a preset…", kind: "sens", mode: "select", custom: true,
     hint: "Jumps straight to one preset, wherever you were before." },
-  { id: "dpi-sniper", group: "Pointer", label: "Hold to slow down…", kind: "dpi", mode: "hold", custom: true,
+  { id: "sens-sniper", group: "Sens", label: "Hold to slow down…", kind: "sens", mode: "hold", custom: true,
     hint: "Drops to one preset while the button is held and springs back when you let go." },
 
   // -------------------------------------------------- navigation
@@ -320,11 +320,11 @@ function groups() {
 // fields a custom action needs. Resolving it merges the catalogue entry
 // with those overrides and reports whether the result is actually usable.
 //
-// `context` carries what only the generator knows: `dpi` is this device's
-// resolved preset list and `dpiSlot` its slot number in the generated
+// `context` carries what only the generator knows: `sens` is this device's
+// resolved preset list and `sensSlot` its slot number in the generated
 // runtime. Both are absent when the panel is only asking what a binding
-// would be called, which is why a DPI action still resolves to a sensible
-// label without them.
+// would be called, which is why a sensitivity action still resolves to a
+// sensible label without them.
 function resolve(binding, context) {
   var spec = byId(binding && binding.action)
   if (!spec || spec.id === "none") return { ok: false, empty: true, kind: "none" }
@@ -351,20 +351,20 @@ function resolve(binding, context) {
   } else if (spec.kind === "dispatch") {
     out.dispatch = spec.dispatch
     out.detail = spec.label
-  } else if (spec.kind === "dpi") {
-    return resolveDpi(spec, binding, context, out)
+  } else if (spec.kind === "sens") {
+    return resolveSens(spec, binding, context, out)
   }
   return out
 }
 
-// Pointer-speed actions are the one kind whose usability depends on the
+// Sensitivity actions are the one kind whose usability depends on the
 // device rather than on the binding alone: a button cannot switch to a
 // preset on a mouse that has none, and cannot switch to the fourth preset
 // on a mouse with three. Both are refused here rather than compiled into a
 // call the runtime would silently ignore.
-function resolveDpi(spec, binding, context, out) {
-  var dpi = context && context.dpi
-  var slot = context && context.dpiSlot
+function resolveSens(spec, binding, context, out) {
+  var sens = context && context.sens
+  var slot = context && context.sensSlot
 
   out.mode = spec.mode
   out.delta = spec.delta || 0
@@ -372,30 +372,33 @@ function resolveDpi(spec, binding, context, out) {
   out.slot = slot || 0
 
   if (spec.custom) {
-    var preset = dpi && dpi.presets ? dpi.presets[out.preset] : null
+    var preset = sens && sens.presets ? sens.presets[out.preset] : null
     if (preset) {
-      out.label = (spec.mode === "hold" ? "Hold for " : "") + preset.name + " · " + preset.dpi + " DPI"
+      // The preset carries its own label, already in the device's unit
+      // (DPI under flat, raw under adaptive), so nothing here has to know
+      // which profile the mouse is on.
+      out.label = (spec.mode === "hold" ? "Hold for " : "") + preset.label
       out.detail = out.label
     } else {
       // No device context at all means the caller is only labelling a row
       // in the picker, which has no device to ask about.
       out.detail = out.label
-      if (dpi) return { ok: false, empty: false, kind: "dpi", error: "that DPI preset no longer exists" }
+      if (sens) return { ok: false, empty: false, kind: "sens", error: "that sensitivity preset no longer exists" }
     }
   } else {
     out.detail = spec.label
   }
 
-  if (context && !dpi) {
+  if (context && !sens) {
     return {
-      ok: false, empty: false, kind: "dpi",
-      error: "This button changes DPI, and this mouse has no DPI presets switched on yet."
+      ok: false, empty: false, kind: "sens",
+      error: "This button changes sensitivity, and this mouse has no presets switched on yet."
     }
   }
   // Only the generator supplies a slot, and only the generator can emit.
   // The panel asks the same question without one, to label a chip.
-  if (context && context.dpiSlot !== undefined && !slot) {
-    return { ok: false, empty: false, kind: "dpi", error: "no DPI runtime slot for this device" }
+  if (context && context.sensSlot !== undefined && !slot) {
+    return { ok: false, empty: false, kind: "sens", error: "no sensitivity runtime slot for this device" }
   }
   // Hold binds a release as well as a press, which the generator emits.
   out.release = spec.mode === "hold"
@@ -439,15 +442,15 @@ function emitBody(resolved, indent) {
   if (resolved.kind === "chord") return emitChord(resolved.mods, resolved.key, pad)
   if (resolved.kind === "dispatch") return pad + "hl.dispatch(" + resolved.dispatch + ")"
   if (resolved.kind === "exec") return pad + "hl.dispatch(hl.dsp.exec_cmd(" + luaString(resolved.command) + "))"
-  if (resolved.kind === "dpi") return emitDpi(resolved, pad)
+  if (resolved.kind === "sens") return emitSens(resolved, pad)
   return pad + "-- nothing to do"
 }
 
 // Slot and preset are integers this file produced, and the function names
 // are literals, so nothing here is interpolated from user input.
-function emitDpi(resolved, pad) {
+function emitSens(resolved, pad) {
   var slot = parseInt(resolved.slot, 10) || 0
-  if (slot <= 0) return pad + "-- no DPI runtime for this device"
+  if (slot <= 0) return pad + "-- no sensitivity runtime for this device"
   if (resolved.mode === "step") return pad + "mc_step(" + slot + ", " + (resolved.delta < 0 ? -1 : 1) + ")"
   // Presets are zero-based everywhere in the config and one-based in Lua.
   var index = (parseInt(resolved.preset, 10) || 0) + 1

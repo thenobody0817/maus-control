@@ -3,8 +3,9 @@
 An Omarchy shell plugin that shows every button on your mouse on a diagram,
 with a leader line from each button to a label saying what it does — and lets
 you rebind any of them to a shortcut, a window action, or a command. It also
-gives the mouse named DPI presets you can switch between, including from a
-button on the mouse itself, and a per-mouse wheel-speed multiplier.
+tunes the pointer per mouse — acceleration profile, declared sensor DPI, and
+named sensitivity presets you can switch between from a button on the mouse
+itself — and sets a per-mouse wheel-speed multiplier.
 
 The diagram is generated from whatever mouse is actually plugged in. A
 two-button travel mouse and a seven-button gaming mouse each draw as
@@ -108,7 +109,7 @@ rebase above instead.
 Click any button on the diagram, or its label, and pick what it should do.
 Nothing is live until you press **Apply**.
 
-- **Pointer** — next / previous DPI preset, jump to one, hold for one
+- **Sens** — next / previous sensitivity preset, jump to one, hold for one
 - **Navigate** — Back, Forward, tab switching, reload
 - **Edit** — copy, paste, cut, undo, redo, find
 - **Window** — close, fullscreen, float/tile, pin
@@ -121,57 +122,65 @@ Nothing is live until you press **Apply**.
 Left and right click are shown but flagged: binding them takes the click
 away everywhere, including in the panel that did it.
 
-## DPI presets
+## Sens
 
-Press **DPI** in the footer. Give the mouse a few named speeds — the defaults
-are a quarter, a half, and all of it — and switch between them by clicking, or
-by binding a button to **Next DPI preset**. A switch draws an on-screen
-overlay saying which one you landed on, and the choice survives a Hyprland
-reload.
+Press **Sens** in the footer. This is where the pointer is tuned for this
+mouse, and it holds three things — only two of which are settings Hyprland
+actually has.
+
+**Acceleration** — `Adaptive` or `Flat`. Adaptive is Hyprland's default curve:
+faster on a quick movement, gentler when you aim. Flat is a constant
+multiplier, and it is the only profile in which sensitivity maps cleanly onto
+DPI.
+
+**Presets** — named sensitivities. The defaults are a slow one for aiming, a
+middle one, and the sensor's own speed. Switch between them by clicking, or by
+binding a button to **Next preset**. A switch draws an on-screen overlay saying
+which one you landed on, and the choice survives a Hyprland reload. Under the
+flat profile each preset is shown as the DPI it acts like; under adaptive it is
+shown as the raw value, because no single DPI describes a curve.
 
 **Hold to slow down** is the sniper button: press and hold to drop to one
 preset, let go and spring back to the one you had. Both edges are bound, so
 there is nothing to toggle back.
 
-### What a "DPI" is here, exactly
+### What "sensitivity" and "DPI" mean here
 
 Hyprland hands a device's `sensitivity` to libinput as the pointer
-acceleration speed. Under the **flat** profile, libinput turns that into a
-constant factor:
+acceleration speed, clamped to `-1.00…+1.00`. Under the **flat** profile
+libinput turns that into a constant factor:
 
 ```
-factor = speed + 1        (libinput, filter-flat.c)
+factor = 1 + sensitivity        (libinput, filter-flat.c)
 ```
 
-which is an exact linear multiplier from 0× to 2×, with 1× at 0. So presets
-pin `accel_profile = "flat"` — the adaptive profile's curve is
-velocity-dependent, and a DPI computed against it would be a number that means
-nothing — and then:
+an exact linear multiplier from 0× to 2×, with 1× at 0. So the effective DPI
+is:
 
 ```
-effective = base × (1 + sensitivity)
+effective = sensor × (1 + sensitivity)
 ```
 
-`base` is what the mouse's own sensor is set to. Maus Control cannot read it and
-never changes it; you tell it in the panel, and set the sensor itself with
-your mouse's own configurator — `solaar`, `piper`/`ratbagd`, or a vendor tool
-such as G HUB.
+`sensor` is the DPI the mouse's own firmware is set to. Maus Control can
+neither read nor change it, so you declare it in the panel; a preset stores
+the *sensitivity*, not the DPI. That is why changing the sensor only relabels
+presets and never changes how they feel, and it is what lets a preset work
+under either profile. Set the sensor with your mouse's own configurator —
+`solaar`, `piper`/`ratbagd`, or a vendor tool such as G HUB.
 
-Two consequences worth knowing:
-
-**Set the sensor high and come down from it.** A preset can reach at most 2×
-the base, which sounds like a limit and mostly is not, because scaling *down*
-is the good direction: the sensor still reports at full resolution and the
-compositor divides, so low-DPI motion stays smooth. Scaling up multiplies
-whole sensor counts and steps the pointer.
-
-**If `base` is wrong, nothing breaks.** Every preset is then wrong by the same
-factor: the numbers become labels, but the ratios between them stay exact. So
-a mouse whose sensor setting you cannot find out still gets a working feature.
+Under the **adaptive** profile the curve is velocity-dependent and no single
+multiplier exists, so the panel stops showing DPI and shows the raw value
+instead. Presets still work; they just shift the curve.
 
 Switching a preset is one `hl.device` call inside the generated Lua, with the
-sensitivity table precomputed — no process to spawn on the press. The helper
-is only asked afterwards to remember the choice and draw the overlay.
+sensitivity table and the profile precomputed — no process to spawn on the
+press. The helper is only asked afterwards to remember the choice and draw the
+overlay.
+
+A note for anyone upgrading from a version that only had DPI presets: the old
+values are converted on first open (`sensitivity = dpi / base − 1`), pinned to
+the flat profile, and the old `dpi` block is replaced by `sens` the next time
+you press **Apply**.
 
 ## Scroll speed
 
@@ -181,12 +190,12 @@ below it scrolls less. It is a plain multiplier rather than an acceleration
 curve, so the number is the whole setting.
 
 Dragging the slider previews the change live, so you can feel where the wheel
-should sit; **Apply** writes it. Like the DPI presets it is a Hyprland setting
-scoped to this one device, and nothing is written to the mouse. There is no
-overlay and no button to bind: the wheel is the thing you are adjusting.
+should sit; **Apply** writes it. Like the sensitivity presets it is a Hyprland
+setting scoped to this one device, and nothing is written to the mouse. There
+is no overlay and no button to bind: the wheel is the thing you are adjusting.
 
 In the generated Lua it is a single `hl.device` call carrying `scroll_factor`,
-applied once at load and emitted after the DPI runtime. A DPI preset switch
+applied once at load and emitted after the sensitivity runtime. A preset switch
 touches only `accel_profile` and `sensitivity`, and Hyprland merges partial
 per-device configs, so the two settings never disturb each other.
 
@@ -275,9 +284,9 @@ Nothing in Maus Control runs with elevated privileges, at any point.
         │
         ▼  generated on Apply
 ~/.local/state/maus-control/
-   bindings.lua    the binds and the DPI runtime
-   dpi.json        preset names and numbers, for the overlay
-   dpi-active      which preset each mouse is on
+   bindings.lua    the binds and the sensitivity runtime
+   sens.json       preset labels and profiles, for the overlay
+   sens-active     which preset each mouse is on
         │
         ▼  one loader line, added once
 ~/.config/hypr/bindings.lua
@@ -293,12 +302,12 @@ backup is taken at `bindings.lua.maus-control.bak` before that line is ever adde
 required module under any other name would be cached and a reload would
 silently keep serving the previous mapping.
 
-Bindings and pointer speed are both scoped to the device with Hyprland's
+Bindings and pointer settings are both scoped to the device with Hyprland's
 `device` option, so two different mice can carry two different maps.
 
 Everything that touches the filesystem or the compositor goes through
 `scripts/maus-control`, so there is one place to read to know what this plugin can
-do. Nothing generated ever interpolates a name into a shell command: a DPI
+do. Nothing generated ever interpolates a name into a shell command: a preset
 bind passes the helper two integers, and the helper looks up what they mean.
 
 ### Typing a shortcut
@@ -345,13 +354,13 @@ anchors also call, so a side-button marker can never drift off the drawn edge.
 | `Profiles.js` | shell geometry and the known-device table |
 | `Leaders.js` | label placement and leader routing |
 | `Actions.js` | what a button can do, and the Lua it compiles to |
-| `Dpi.js` | DPI presets, and the sensitivity arithmetic behind them |
+| `Sens.js` | sensitivity presets, profiles, and the DPI arithmetic behind them |
 | `Scroll.js` | wheel speed, as a per-device multiplier |
 | `Config.js` | config shape, Lua generation, the loader hook |
 | `MouseCanvas.qml` | the diagram |
 | `MausControlPanel.qml` | the panel |
 | `ActionPicker.qml` | the rebinding sidebar |
-| `DpiPanel.qml` | the DPI sidebar |
+| `SensPanel.qml` | the sensitivity sidebar |
 | `ScrollPanel.qml` | the wheel-speed sidebar |
 | `scripts/maus-control` | the only path to the filesystem and the compositor |
 
@@ -364,12 +373,13 @@ tests/run
 No framework and no dependencies — each file is `node` plus the real `lua`
 and `luac` binaries, because the interesting failures are not in JavaScript.
 
-`test_dpi.js` executes the generated Lua in a real interpreter against a stub
-compositor and then presses the binds, so cycling, wrapping, sniper release
-and the state file are checked by behaviour rather than by grepping the
-output. That sandbox has `os.execute` and `io.popen` deleted, which turns a
-preset name or a device name that escaped its string literal into a loud
-failure rather than something a substring check might miss.
+`test_sens.js` executes the generated Lua in a real interpreter against a stub
+compositor and then presses the binds, so cycling, wrapping, sniper release,
+the applied profile and the state file are checked by behaviour rather than by
+grepping the output. It also checks the migration of an old DPI config. That
+sandbox has `os.execute` and `io.popen` deleted, which turns a preset name or a
+device name that escaped its string literal into a loud failure rather than
+something a substring check might miss.
 
 `test_config.js` round-trips hostile strings through the real `lua`
 interpreter and syntax-checks generated output with `luac -p`, because the
@@ -380,8 +390,8 @@ of one rule is how keystroke buttons were silently dropped once already.
 
 `test_scroll.js` checks the multiplier's clamp, step and literal formatting,
 that every slider position compiles to a Lua number, and that the emitted
-`hl.device` call is byte-stable and follows the DPI runtime. It also runs the
-generated file through `luac` with a hostile device name, the same way
+`hl.device` call is byte-stable and follows the sensitivity runtime. It also
+runs the generated file through `luac` with a hostile device name, the same way
 `test_config.js` does.
 
 `test_leaders.js` sweeps every button count from 2 to 16 and shuffles each

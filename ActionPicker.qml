@@ -5,7 +5,7 @@ import qs.Ui as Ui
 import "Actions.js" as Actions
 import "Devices.js" as Devices
 import "Profiles.js" as Profiles
-import "Dpi.js" as Dpi
+import "Sens.js" as Sens
 
 // What the selected button should do. Reads and writes through the panel
 // rather than holding its own copy, so the diagram and this list can never
@@ -39,15 +39,15 @@ Item {
   // at all, and every chip looks equally unchosen.
   readonly property string currentPlace: panel && code >= 0 ? panel.placeOf(code) : ""
 
-  // A DPI action needs presets to point at. Rather than hiding the rows
-  // when there are none — which leaves someone hunting for a feature the
-  // README told them about — they stay, and picking one says what is
+  // A sensitivity action needs presets to point at. Rather than hiding the
+  // rows when there are none — which leaves someone hunting for a feature
+  // the README told them about — they stay, and picking one says what is
   // missing and offers to fix it.
   readonly property var actionSpec: Actions.byId(currentAction)
-  readonly property bool isDpi: actionSpec !== null && actionSpec.kind === "dpi"
-  readonly property bool needsPreset: isDpi && actionSpec.custom === true
-  readonly property bool dpiReady: panel ? panel.dpiOn : false
-  readonly property var dpiPresets: panel ? panel.dpiConfig.presets : []
+  readonly property bool isSens: actionSpec !== null && actionSpec.kind === "sens"
+  readonly property bool needsPreset: isSens && actionSpec.custom === true
+  readonly property bool sensReady: panel ? panel.sensOn : false
+  readonly property var sensPresets: panel ? panel.sensConfig.presets : []
   readonly property int chosenPreset: binding && binding.preset !== undefined ? binding.preset : 0
 
   onCodeChanged: placesOpen = false
@@ -311,13 +311,13 @@ Item {
       }
     }
 
-    // ---------------------------------------------------------- dpi
+    // ---------------------------------------------------------- sens
     //
     // Which preset the button aims at. Clicking one applies it, so the
     // choice is made by feel rather than by reading a number.
     ColumnLayout {
       Layout.fillWidth: true
-      visible: root.needsPreset && root.dpiReady
+      visible: root.needsPreset && root.sensReady
       spacing: Style.space(1)
 
       Ui.PanelSectionHeader {
@@ -330,7 +330,7 @@ Item {
         spacing: Style.space(1)
 
         Repeater {
-          model: { root.panel ? root.panel.configRev : 0; return root.dpiPresets }
+          model: { root.panel ? root.panel.configRev : 0; return root.sensPresets }
 
           delegate: Rectangle {
             id: presetChip
@@ -354,7 +354,8 @@ Item {
               anchors.centerIn: parent
               // Same shape the OSD draws on a switch, so the chip and the
               // overlay that confirms the press read as the same thing.
-              text: presetChip.modelData.name + " · " + presetChip.modelData.dpi
+              text: Sens.presetLabel(presetChip.modelData,
+                root.panel.sensConfig.profile, root.panel.sensConfig.sensor)
               color: presetChip.chosen ? Color.accent : Color.foreground
               font.family: Style.font.family
               font.pixelSize: Style.font.caption
@@ -372,27 +373,27 @@ Item {
       }
     }
 
-    // A DPI action on a mouse with no presets would compile to nothing and
-    // be reported as skipped at Apply. Say so here instead, while there is
-    // still a button to press about it.
+    // A sensitivity action on a mouse with no presets would compile to
+    // nothing and be reported as skipped at Apply. Say so here instead,
+    // while there is still a button to press about it.
     Rectangle {
       Layout.fillWidth: true
-      visible: root.isDpi && !root.dpiReady
+      visible: root.isSens && !root.sensReady
       radius: Style.cornerRadius > 0 ? Style.cornerRadius : 4
       color: Qt.rgba(Color.urgent.r, Color.urgent.g, Color.urgent.b, 0.10)
       border.color: Qt.rgba(Color.urgent.r, Color.urgent.g, Color.urgent.b, 0.35)
       border.width: 1
-      implicitHeight: dpiNote.implicitHeight + Style.space(4)
+      implicitHeight: sensNote.implicitHeight + Style.space(4)
 
       ColumnLayout {
-        id: dpiNote
+        id: sensNote
         anchors.fill: parent
         anchors.margins: Style.space(2)
         spacing: Style.space(2)
 
         Text {
           Layout.fillWidth: true
-          text: "This mouse has no DPI presets yet, so there is nothing for this button to switch between."
+          text: "This mouse has no sensitivity presets yet, so there is nothing for this button to switch between."
           wrapMode: Text.WordWrap
           color: Color.urgent
           font.family: Style.font.family
@@ -401,7 +402,7 @@ Item {
         Ui.Button {
           text: "Set up presets"
           bordered: true
-          onClicked: root.panel.openDpi()
+          onClicked: root.panel.openSens()
         }
       }
     }

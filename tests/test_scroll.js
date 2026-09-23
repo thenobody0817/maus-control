@@ -6,7 +6,7 @@ const { execFileSync } = require("child_process")
 
 const A = require("../Actions.js")
 const C = require("../Config.js")
-const Dpi = require("../Dpi.js")
+const Sens = require("../Sens.js")
 const Scroll = require("../Scroll.js")
 
 // ---------------------------------------------------------------- shape
@@ -96,7 +96,7 @@ assert.ok(/does not report this device by name/.test(unnamed.error))
 {
   const config = C.normalize({
     devices: { k: { scroll: { enabled: true, factor: 1.5 } } }
-  }, Dpi, Scroll)
+  }, Sens, Scroll)
   const slots = C.scrollSlots([DEVICE], config, Scroll)
   assert.strictEqual(slots.slots.length, 1)
   assert.strictEqual(slots.byKey.k, 1)
@@ -115,8 +115,8 @@ const HELPER = "/home/somebody/.config/omarchy/plugins/x/scripts/maus-control"
 function generate(scroll, extra) {
   const config = C.normalize({
     devices: Object.assign({ k: { scroll } }, extra || {})
-  }, Dpi, Scroll)
-  return C.generateLua([DEVICE], config, A, Dpi, Scroll, HELPER)
+  }, Sens, Scroll)
+  return C.generateLua([DEVICE], config, A, Sens, Scroll, HELPER)
 }
 
 {
@@ -144,11 +144,12 @@ function generate(scroll, extra) {
 {
   const config = C.normalize({
     devices: { k: {
-      dpi: { enabled: true, base: 1600, active: 0, presets: [{ name: "Full", dpi: 1600 }] },
+      sens: { enabled: true, sensor: 1600, profile: "flat", active: 0,
+              presets: [{ name: "Full", sensitivity: 0 }] },
       scroll: { enabled: true, factor: 2 }
     } }
-  }, Dpi, Scroll)
-  const generated = C.generateLua([DEVICE], config, A, Dpi, Scroll, HELPER)
+  }, Sens, Scroll)
+  const generated = C.generateLua([DEVICE], config, A, Sens, Scroll, HELPER)
   assert.ok(generated.text.indexOf("scroll_factor") > generated.text.indexOf("mc_apply("),
     "scroll follows the DPI runtime")
 }
@@ -163,10 +164,10 @@ function generate(scroll, extra) {
   const hostile = 'Mouse\n' + payload + '\n-- '
   const config = C.normalize({
     devices: { k: { scroll: { enabled: true, factor: 1.5 } } }
-  }, Dpi, Scroll)
+  }, Sens, Scroll)
   const generated = C.generateLua(
     [{ key: "k", label: hostile, hyprName: hostile, hyprKbdName: "kbd" }],
-    config, A, Dpi, Scroll, HELPER)
+    config, A, Sens, Scroll, HELPER)
 
   const tmp = path.join(os.tmpdir(), "maus-control-scroll-check.lua")
   fs.writeFileSync(tmp, generated.text)

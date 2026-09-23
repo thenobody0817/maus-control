@@ -21,11 +21,11 @@ FILES=(
   MouseCanvas.qml
   ActionPicker.qml
   BarWidget.qml
-  DpiPanel.qml
+  SensPanel.qml
   ScrollPanel.qml
   Devices.js
   Profiles.js
-  Dpi.js
+  Sens.js
   Scroll.js
   Leaders.js
   Actions.js

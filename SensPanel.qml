@@ -2,38 +2,50 @@ import QtQuick
 import QtQuick.Layouts
 import qs.Commons
 import qs.Ui as Ui
-import "Dpi.js" as Dpi
+import "Sens.js" as Sens
 
-// Pointer speed, in DPI, and the presets you switch between.
+// Pointer sensitivity for the current mouse.
+//
+// Three things live here, and only two of them are settings the compositor
+// actually has: the acceleration profile and the raw sensitivity. The third,
+// the mouse's own DPI, is a number the user declares so the pointer can be
+// shown as an effective DPI under the flat profile. See Sens.js.
 //
 // Reads and writes through the panel rather than holding its own copy, so
-// the header readout and this sidebar can never disagree about which
-// preset is live.
-//
-// Selecting or editing a preset applies it to the running compositor
-// immediately, because pointer speed is the one setting nobody can judge
-// from a number. Nothing is written to disk until Apply, which is the same
-// promise every other control in this panel makes.
+// the header readout and this sidebar can never disagree.
 Item {
   id: root
 
   property var panel: null
 
-  readonly property var config: panel ? panel.dpiConfig : Dpi.blank()
-  readonly property bool on: panel ? panel.dpiOn : false
-  readonly property int current: panel ? panel.dpiCurrent : 0
-  readonly property int editing: panel ? panel.dpiEditing : -1
-  readonly property int ceiling: Dpi.ceilingFor(config.base)
+  readonly property var config: panel ? panel.sensConfig : Sens.blank()
+  readonly property bool on: panel ? panel.sensOn : false
+  readonly property int current: panel ? panel.sensCurrent : 0
+  readonly property int editing: panel ? panel.sensEditing : -1
 
+  readonly property bool flat: config.profile === "flat"
   readonly property var live: on && current < config.presets.length
     ? config.presets[current] : null
 
-  // Where the live preset sits in everything this mouse could reach, which
-  // is what the meter under the readout is showing. Anchored at zero rather
-  // than at the lowest preset so the bar means the same thing whatever the
-  // presets happen to be.
-  readonly property real position: live && ceiling > 0
-    ? Math.max(0, Math.min(1, live.dpi / ceiling)) : 0
+  // The number on screen is the DPI the pointer acts like under flat, and
+  // the raw libinput value under adaptive. One profile decides it.
+  readonly property real liveSensitivity: live ? live.sensitivity : 0
+  readonly property real liveDpi: Sens.effectiveDpi(liveSensitivity, config.sensor)
+  readonly property real liveFactor: 1 + liveSensitivity
+  readonly property real ceiling: Sens.ceilingFor(config.sensor)
+
+  // Where the live value sits on its own scale, which is what the meter
+  // under the readout is showing.
+  readonly property real position: live === null ? 0
+    : (flat ? Math.max(0, Math.min(1, liveDpi / ceiling))
+            : Math.max(0, Math.min(1, (liveSensitivity + 1) / 2)))
+
+  // The preset editor works in DPI under flat (the unit people think in)
+  // and in the raw value under adaptive (where DPI would mean nothing).
+  readonly property real editValue: editing >= 0 && editing < config.presets.length
+    ? (flat ? Math.round(Sens.effectiveDpi(config.presets[editing].sensitivity, config.sensor))
+            : config.presets[editing].sensitivity)
+    : 0
 
   ColumnLayout {
     anchors.fill: parent
@@ -47,14 +59,14 @@ Item {
       ColumnLayout {
         spacing: 1
         Text {
-          text: "Pointer speed"
+          text: "Sens"
           color: Color.foreground
           font.family: Style.font.family
           font.pixelSize: Style.font.subtitle
           font.weight: Font.DemiBold
         }
         Text {
-          text: root.on ? root.config.presets.length + " presets" : "off"
+          text: root.on ? root.config.presets.length + " presets · " + root.config.profile : "off"
           color: Color.muted
           font.family: Style.font.family
           font.pixelSize: Style.font.caption
@@ -65,7 +77,7 @@ Item {
         text: root.on ? "Turn off" : "Turn on"
         bordered: true
         active: !root.on
-        onClicked: root.panel.setDpiEnabled(!root.on)
+        onClicked: root.panel.setSensEnabled(!root.on)
       }
     }
 
@@ -76,10 +88,6 @@ Item {
     }
 
     // ---------------------------------------------------------- off
-    //
-    // The pitch, for a mouse that has never had presets. It says what this
-    // does and, just as importantly, what it does not do — nothing is
-    // written to the mouse here either.
     ColumnLayout {
       Layout.fillWidth: true
       visible: !root.on
@@ -87,9 +95,9 @@ Item {
 
       Text {
         Layout.fillWidth: true
-        text: "Switch between named pointer speeds — a slow one for aiming, "
-            + "a fast one for crossing three monitors — and bind a button to "
-            + "step through them."
+        text: "Adjust the pointer for this mouse: its acceleration profile, the "
+            + "raw libinput sensitivity, and a declared sensor DPI so the speed "
+            + "can be shown as one number you recognise."
         wrapMode: Text.WordWrap
         color: Color.foreground
         font.family: Style.font.family
@@ -109,10 +117,6 @@ Item {
     }
 
     // ---------------------------------------------------------- readout
-    //
-    // The number, big, because it is the whole point of the panel — and a
-    // meter showing where it sits in everything this mouse can reach, so
-    // "1600" means something without knowing the sensor is set to 1600.
     Rectangle {
       Layout.fillWidth: true
       visible: root.on
@@ -132,7 +136,9 @@ Item {
           Layout.fillWidth: true
           spacing: Style.space(2)
           Text {
-            text: root.live ? String(root.live.dpi) : "—"
+            text: root.live === null ? "—"
+                  : (root.flat ? String(Math.round(root.liveDpi))
+                               : root.liveSensitivity.toFixed(2))
             color: Color.accent
             font.family: Style.font.family
             font.pixelSize: Style.font.displayLarge
@@ -141,7 +147,7 @@ Item {
           Text {
             Layout.alignment: Qt.AlignBottom
             Layout.bottomMargin: Style.space(2)
-            text: "DPI"
+            text: root.flat ? "DPI" : "sens"
             color: Qt.rgba(Color.accent.r, Color.accent.g, Color.accent.b, 0.7)
             font.family: Style.font.family
             font.pixelSize: Style.font.bodySmall
@@ -177,7 +183,9 @@ Item {
 
         Text {
           Layout.fillWidth: true
-          text: "reaches " + root.ceiling + " DPI"
+          text: root.flat
+            ? root.liveFactor.toFixed(2) + "× · reaches " + root.ceiling + " DPI at this sensor"
+            : "Hyprland's adaptive curve, shifted by this value"
           wrapMode: Text.WordWrap
           color: Qt.rgba(Color.accent.r, Color.accent.g, Color.accent.b, 0.75)
           font.family: Style.font.family
@@ -186,7 +194,7 @@ Item {
       }
     }
 
-    // ---------------------------------------------------------- presets
+    // ---------------------------------------------------------- scroll body
     Flickable {
       Layout.fillWidth: true
       Layout.fillHeight: true
@@ -201,8 +209,46 @@ Item {
         width: parent.width
         spacing: Style.space(2)
 
+        // ------------------------------------------------------ accel
         Ui.PanelSectionHeader {
           Layout.fillWidth: true
+          text: "ACCELERATION"
+        }
+
+        RowLayout {
+          Layout.fillWidth: true
+          spacing: Style.space(2)
+          Ui.Button {
+            Layout.fillWidth: true
+            text: "Adaptive"
+            bordered: true
+            selected: !root.flat
+            onClicked: root.panel.setSensProfile("adaptive")
+          }
+          Ui.Button {
+            Layout.fillWidth: true
+            text: "Flat"
+            bordered: true
+            selected: root.flat
+            onClicked: root.panel.setSensProfile("flat")
+          }
+        }
+
+        Text {
+          Layout.fillWidth: true
+          text: root.flat
+            ? "Flat: a constant multiplier, so sensitivity maps exactly to DPI."
+            : "Adaptive: Hyprland's default curve, faster on quick movement. DPI is not shown, because no single multiplier describes it."
+          wrapMode: Text.WordWrap
+          color: Color.muted
+          font.family: Style.font.family
+          font.pixelSize: Style.font.caption
+        }
+
+        // ------------------------------------------------------ presets
+        Ui.PanelSectionHeader {
+          Layout.fillWidth: true
+          Layout.topMargin: Style.space(3)
           text: "PRESETS"
         }
 
@@ -245,13 +291,11 @@ Item {
                 elide: Text.ElideRight
               }
               Text {
-                text: card.modelData.dpi
+                text: Sens.valueLabel(card.modelData.sensitivity, root.config.profile, root.config.sensor)
                 color: card.chosen ? Color.accent : Color.muted
                 font.family: Style.font.family
                 font.pixelSize: Style.font.bodySmall
               }
-              // Opens the editor for this preset without selecting it, so
-              // renaming the sniper preset does not drop the pointer to it.
               Ui.Button {
                 text: card.open ? "✕" : "✎"
                 bordered: false
@@ -259,7 +303,7 @@ Item {
                 horizontalPadding: Style.space(2)
                 verticalPadding: Style.space(1)
                 tooltipText: card.open ? "Close" : "Rename or change this preset"
-                onClicked: root.panel.dpiEditing = card.open ? -1 : card.index
+                onClicked: root.panel.sensEditing = card.open ? -1 : card.index
               }
             }
 
@@ -269,7 +313,7 @@ Item {
               anchors.rightMargin: Style.space(9)   // leave the edit button clickable
               hoverEnabled: true
               cursorShape: Qt.PointingHandCursor
-              onClicked: root.panel.selectDpiPreset(card.index)
+              onClicked: root.panel.selectSensPreset(card.index)
             }
           }
         }
@@ -299,8 +343,8 @@ Item {
               // cursor. The panel is updated on edit instead.
               text: editor.preset ? editor.preset.name : ""
               placeholderText: "Name"
-              maximumLength: Dpi.MAX_NAME
-              onTextEdited: root.panel.editDpiPreset(root.editing, { name: text }, false)
+              maximumLength: Sens.MAX_NAME
+              onTextEdited: root.panel.editSensPreset(root.editing, { name: text }, false)
             }
 
             RowLayout {
@@ -310,18 +354,26 @@ Item {
                 Layout.fillWidth: true
                 fillColor: Color.accent
                 knobColor: Color.accent
-                minimum: Dpi.STEP
-                maximum: root.ceiling
-                step: Dpi.STEP
-                integer: true
-                value: editor.preset ? editor.preset.dpi : 0
-                onMoved: function (next) { root.panel.editDpiPreset(root.editing, { dpi: next }, false) }
-                onReleased: function (next) { root.panel.editDpiPreset(root.editing, { dpi: next }, true) }
+                // DPI under flat, raw sensitivity under adaptive.
+                minimum: root.flat ? Sens.SENSOR_STEP : Sens.MIN_SENSITIVITY
+                maximum: root.flat ? root.ceiling : Sens.MAX_SENSITIVITY
+                step: root.flat ? Sens.SENSOR_STEP : Sens.SENS_STEP
+                integer: root.flat
+                value: root.editValue
+                onMoved: function (next) {
+                  root.panel.editSensPreset(root.editing,
+                    root.flat ? { dpi: next } : { sensitivity: next }, false)
+                }
+                onReleased: function (next) {
+                  root.panel.editSensPreset(root.editing,
+                    root.flat ? { dpi: next } : { sensitivity: next }, true)
+                }
               }
               Text {
                 Layout.minimumWidth: Style.space(24)
                 horizontalAlignment: Text.AlignRight
-                text: editor.preset ? editor.preset.dpi : ""
+                text: editor.preset
+                  ? Sens.valueLabel(editor.preset.sensitivity, root.config.profile, root.config.sensor) : ""
                 color: Color.foreground
                 font.family: Style.font.family
                 font.pixelSize: Style.font.bodySmall
@@ -335,7 +387,7 @@ Item {
               Ui.Button {
                 text: "Remove preset"
                 bordered: true
-                onClicked: root.panel.removeDpiPreset(root.editing)
+                onClicked: root.panel.removeSensPreset(root.editing)
               }
             }
           }
@@ -345,11 +397,11 @@ Item {
           Layout.fillWidth: true
           text: "Add a preset"
           bordered: true
-          enabled: root.config.presets.length < Dpi.MAX_PRESETS
-          onClicked: root.panel.addDpiPreset()
+          enabled: root.config.presets.length < Sens.MAX_PRESETS
+          onClicked: root.panel.addSensPreset()
         }
 
-        // ------------------------------------------------------ base
+        // ------------------------------------------------------ sensor
         Ui.PanelSectionHeader {
           Layout.fillWidth: true
           Layout.topMargin: Style.space(3)
@@ -361,18 +413,18 @@ Item {
           spacing: Style.space(2)
           Ui.PanelSlider {
             Layout.fillWidth: true
-            minimum: Dpi.MIN_BASE
+            minimum: Sens.MIN_SENSOR
             maximum: 6400
-            step: 100
+            step: Sens.SENSOR_STEP
             integer: true
-            value: root.config.base
-            onMoved: function (next) { root.panel.setDpiBase(next, false) }
-            onReleased: function (next) { root.panel.setDpiBase(next, true) }
+            value: root.config.sensor
+            onMoved: function (next) { root.panel.setSensSensor(next, false) }
+            onReleased: function (next) { root.panel.setSensSensor(next, true) }
           }
           Text {
             Layout.minimumWidth: Style.space(24)
             horizontalAlignment: Text.AlignRight
-            text: root.config.base
+            text: root.config.sensor
             color: Color.foreground
             font.family: Style.font.family
             font.pixelSize: Style.font.bodySmall
@@ -383,32 +435,13 @@ Item {
           Layout.fillWidth: true
           text: "What the sensor itself is set to. Maus Control never changes it and "
               + "cannot read it — set it with your mouse's own configurator "
-              + "(Solaar, Piper, or a vendor tool) and say so here."
+              + "(Solaar, Piper, or a vendor tool) and say so here. It only "
+              + "scales the DPI shown above; changing it never changes how a "
+              + "preset feels."
           wrapMode: Text.WordWrap
           color: Color.muted
           font.family: Style.font.family
           font.pixelSize: Style.font.caption
-        }
-
-        Text {
-          Layout.fillWidth: true
-          text: "Set it high: coming down from a high sensor DPI stays smooth, "
-              + "and presets cannot go above " + root.ceiling + " DPI."
-          wrapMode: Text.WordWrap
-          color: Color.muted
-          font.family: Style.font.family
-          font.pixelSize: Style.font.caption
-        }
-
-        Text {
-          Layout.fillWidth: true
-          text: "Wrong number? Every preset is off by the same factor — the labels "
-              + "drift, the steps between them stay exact."
-          wrapMode: Text.WordWrap
-          color: Qt.rgba(Color.muted.r, Color.muted.g, Color.muted.b, 0.8)
-          font.family: Style.font.family
-          font.pixelSize: Style.font.caption
-          font.italic: true
         }
 
         // Where the button hint lives, inside the scroll rather than
@@ -416,7 +449,7 @@ Item {
         Text {
           Layout.fillWidth: true
           Layout.topMargin: Style.space(3)
-          text: "Click a button on the diagram and pick Next DPI preset to switch "
+          text: "Click a button on the diagram and pick Next preset to switch "
               + "with your thumb, or Hold to slow down for a sniper button."
           wrapMode: Text.WordWrap
           color: Color.muted
@@ -436,7 +469,7 @@ Item {
       Ui.Button {
         text: "Done"
         bordered: true
-        onClicked: root.panel.dpiOpen = false
+        onClicked: root.panel.sensOpen = false
       }
     }
   }
