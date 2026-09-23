@@ -161,6 +161,18 @@ assert.strictEqual(C.withoutHook(hooked), original)
 const broken = original + "\n-- BEGIN maus-control\nhalf a block\n"
 assert.strictEqual(C.withHook(broken, STATE), broken)
 
+// A checkout that predates the rename carries the old block. Hooking has to
+// fold it away rather than leave two loaders behind, or bindings.lua would
+// load both the old and the new generated file.
+{
+  const legacy = "-- BEGIN mousemap\nold loader\n-- END mousemap\n"
+  const migrated = C.withHook(original + "\n" + legacy, STATE)
+  assert.ok(!migrated.includes("BEGIN mousemap"), "the pre-rename block is gone")
+  assert.strictEqual((migrated.match(/BEGIN maus-control/g) || []).length, 1,
+    "exactly one current block remains")
+  assert.strictEqual(C.withoutHook(migrated), original)
+}
+
 // ---------------------------------------------------------------- real hw
 
 // Discovery over this machine's actual /proc snapshot, with profiles.

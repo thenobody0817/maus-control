@@ -425,6 +425,13 @@ function generateLua(devices, config, Actions, Dpi, helper) {
 var HOOK_BEGIN = "-- BEGIN maus-control"
 var HOOK_END = "-- END maus-control"
 
+// The same block under the plugin's previous name. A checkout that predates
+// the rename still has this in bindings.lua, pointing at the old state
+// directory; withHook rewrites it in place rather than leaving a second
+// loader behind that would load the old bindings.
+var HOOK_BEGIN_LEGACY = "-- BEGIN mousemap"
+var HOOK_END_LEGACY = "-- END mousemap"
+
 function hookBlock(statePath) {
   return [
     HOOK_BEGIN,
@@ -440,10 +447,33 @@ function hasHook(text) {
   return String(text || "").indexOf(HOOK_BEGIN) !== -1
 }
 
-// Append the block, or replace an existing one in place. Everything
-// outside the markers is preserved byte for byte.
-function withHook(text, statePath) {
+// Remove the block between one pair of markers. A marker with no closing
+// partner is left strictly alone: guessing where a half-written block ends
+// would mean deleting config the user wrote.
+function removeMarked(body, beginMarker, endMarker) {
+  var begin = body.indexOf(beginMarker)
+  if (begin === -1) return body
+  var end = body.indexOf(endMarker, begin)
+  if (end === -1) return body
+  var before = body.substring(0, begin)
+  var after = body.substring(end + endMarker.length)
+  return (before.replace(/\n+$/, "\n") + after.replace(/^\n+/, "")).replace(/\n{3,}/g, "\n\n")
+}
+
+// Drop both the current and the pre-rename block.
+function withoutHook(text) {
   var body = String(text || "")
+  body = removeMarked(body, HOOK_BEGIN_LEGACY, HOOK_END_LEGACY)
+  return removeMarked(body, HOOK_BEGIN, HOOK_END)
+}
+
+// Append the block, or replace an existing one in place. Everything
+// outside the markers is preserved byte for byte. A pre-rename block is
+// folded away first, so a fork that was installed as MouseMap migrates onto
+// the new state path instead of loading both.
+function withHook(text, statePath) {
+  var raw = String(text || "")
+  var body = removeMarked(raw, HOOK_BEGIN_LEGACY, HOOK_END_LEGACY)
   var block = hookBlock(statePath)
   var begin = body.indexOf(HOOK_BEGIN)
   if (begin === -1) {
@@ -451,19 +481,8 @@ function withHook(text, statePath) {
     return body + joiner + "\n" + block + "\n"
   }
   var end = body.indexOf(HOOK_END, begin)
-  if (end === -1) return body  // unclosed marker: refuse to guess where it ends
+  if (end === -1) return raw  // unclosed marker: refuse to guess where it ends
   return body.substring(0, begin) + block + body.substring(end + HOOK_END.length)
-}
-
-function withoutHook(text) {
-  var body = String(text || "")
-  var begin = body.indexOf(HOOK_BEGIN)
-  if (begin === -1) return body
-  var end = body.indexOf(HOOK_END, begin)
-  if (end === -1) return body
-  var after = body.substring(end + HOOK_END.length)
-  var before = body.substring(0, begin)
-  return (before.replace(/\n+$/, "\n") + after.replace(/^\n+/, "")).replace(/\n{3,}/g, "\n\n")
 }
 
 if (typeof module !== "undefined") {

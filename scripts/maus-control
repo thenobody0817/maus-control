@@ -22,6 +22,13 @@ HYPR_BINDINGS="${XDG_CONFIG_HOME:-$HOME/.config}/hypr/bindings.lua"
 DPI_SIDECAR="$STATE_DIR/dpi.json"
 DPI_ACTIVE="$STATE_DIR/dpi-active"
 
+# Where a pre-rename (MouseMap) install kept the same three things. Read
+# once by `migrate` so an existing config, DPI presets, and backup snapshot
+# survive the rename.
+OLD_STATE_DIR="${XDG_STATE_HOME:-$HOME/.local/state}/omarchy-mousemap"
+OLD_CONFIG="${XDG_CONFIG_HOME:-$HOME/.config}/omarchy/mousemap.json"
+OLD_BACKUP="$HYPR_BINDINGS.mousemap.bak"
+
 # Refuse anything absurd rather than streaming it into the panel.
 MAX_BYTES=1048576
 
@@ -69,6 +76,33 @@ cmd_backup() {
   [ -e "$backup" ] && return 0
   cp -p -- "$path" "$backup"
   printf '%s\n' "$backup"
+}
+
+# Carry a pre-rename install forward. Idempotent: once the new paths exist
+# this is a no-op, so it is safe to run on every panel open. The loader line
+# in bindings.lua is rewritten separately by the panel, which owns the
+# markers; this only moves the files the panel cannot see on its own.
+cmd_migrate() {
+  # Config first: it is the only thing here a user cannot regenerate by
+  # hand. cmd_write stages a sibling and renames, so the copy is atomic.
+  if [ ! -e "$CONFIG" ] && [ -f "$OLD_CONFIG" ]; then
+    cmd_write "$CONFIG" <"$OLD_CONFIG"
+  fi
+
+  # The pre-touch snapshot, if one was ever taken.
+  if [ ! -e "$HYPR_BINDINGS.maus-control.bak" ] && [ -f "$OLD_BACKUP" ]; then
+    cp -p -- "$OLD_BACKUP" "$HYPR_BINDINGS.maus-control.bak"
+  fi
+
+  # Generated files are rebuilt on the first Apply, but copying the old
+  # directory keeps DPI preset selection and the binding file continuous
+  # until then.
+  if [ ! -d "$STATE_DIR" ] && [ -d "$OLD_STATE_DIR" ]; then
+    mkdir -p "$(dirname "$STATE_DIR")"
+    cp -a -- "$OLD_STATE_DIR" "$STATE_DIR"
+  fi
+
+  return 0
 }
 
 # ---------------------------------------------------------------- discovery
@@ -555,6 +589,7 @@ case "${1:-}" in
   write)   shift; cmd_write "$@" ;;
   read)    shift; cmd_read "$@" ;;
   backup)  shift; cmd_backup "$@" ;;
+  migrate) cmd_migrate ;;
   detect)  cmd_detect ;;
   reload)  cmd_reload ;;
   live)    cmd_live ;;
@@ -571,6 +606,7 @@ usage: maus-control <command>
   read <path>       print a file, bounded and symlink-refusing
   write <path>      install stdin at path, atomically
   backup [path]     one-time snapshot of hypr/bindings.lua
+  migrate           carry a pre-rename MouseMap install onto these paths
   reload            hyprctl reload, failing loudly on config errors
   live              load generated bindings into the running compositor
   float             float and size the panel window

@@ -1120,7 +1120,15 @@ Item {
     command: [root.helper, "float"]
   }
 
-  Component.onCompleted: readConfigProc.running = true
+  // A pre-rename install is carried onto the new paths before anything is
+  // read, so the config that comes back is the one the user already had.
+  Process {
+    id: migrateProc
+    command: [root.helper, "migrate"]
+    onExited: readConfigProc.running = true
+  }
+
+  Component.onCompleted: migrateProc.running = true
 
   // ------------------------------------------------------------ window
 
