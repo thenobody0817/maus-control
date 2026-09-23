@@ -57,7 +57,7 @@ if (manifest.barWidget && manifest.barWidget.defaultSection) {
 
 const id = manifest.id
 for (const [file, pattern] of [
-  ["MouseMapPanel.qml", new RegExp(`readonly property string pluginId: "${id}"`)],
+  ["MausControlPanel.qml", new RegExp(`readonly property string pluginId: "${id}"`)],
   ["BarWidget.qml", new RegExp(`moduleName: "${id}"`)],
   ["BarWidget.qml", new RegExp(`shell toggle ${id.replace(/\./g, "\\.")}"`)],
   ["install", new RegExp(`PLUGIN_ID="${id}"`)],
@@ -69,8 +69,8 @@ for (const [file, pattern] of [
 // Nothing may still be naming the plugin by a previous id.
 //
 // Matched by the places an id is actually used rather than by its shape:
-// this plugin also writes `bindings.lua.mousemap.bak` and reads
-// `mousemap.json`, and a sweep loose enough to see a stale id would flag
+// this plugin also writes `bindings.lua.maus-control.bak` and reads
+// `maus-control.json`, and a sweep loose enough to see a stale id would flag
 // both of those every time.
 const USES = [
   /omarchy(?:-plugin)?[ -](?:plugin )?(?:enable|disable|remove|update|add)\s+(\S+)/g,
@@ -80,7 +80,7 @@ const USES = [
   /pluginId: "([^"]+)"/g,
   /moduleName: "([^"]+)"/g
 ]
-for (const file of ["MouseMapPanel.qml", "BarWidget.qml", "install", "README.md", "scripts/mousemap"]) {
+for (const file of ["MausControlPanel.qml", "BarWidget.qml", "install", "README.md", "scripts/maus-control"]) {
   const text = read(file)
   for (const pattern of USES) {
     pattern.lastIndex = 0
@@ -105,7 +105,7 @@ for (const required of ["README.md", "LICENSE", "manifest.json", "preview.png"])
   assert.ok(fs.existsSync(path.join(root, required)), `missing required file ${required}`)
 }
 
-for (const script of ["scripts/mousemap"]) {
+for (const script of ["scripts/maus-control"]) {
   const mode = fs.statSync(path.join(root, script)).mode
   assert.ok(mode & 0o111, `${script} must be executable in the repository`)
 }

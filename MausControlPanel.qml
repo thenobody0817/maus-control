@@ -11,7 +11,7 @@ import "Actions.js" as Actions
 import "Config.js" as Config
 import "Dpi.js" as Dpi
 
-// MouseMap — see what every button on your mouse does, and change it.
+// Maus Control — see what every button on your mouse does, and change it.
 //
 // The diagram is the interface. Buttons are drawn where they physically
 // sit on the shell, each one led out to a chip naming what it does; click
@@ -21,7 +21,7 @@ import "Dpi.js" as Dpi
 Item {
   id: root
 
-  readonly property string pluginId: "io.github.steezy-code.mousemap"
+  readonly property string pluginId: "local.maus.control"
   property var shell: null
   property string sourceDir: ""
   property bool closingFromHost: false
@@ -622,13 +622,13 @@ Item {
   }
 
   readonly property string helper: sourceDir !== ""
-    ? sourceDir + "/scripts/mousemap"
-    : Quickshell.env("HOME") + "/.config/omarchy/plugins/" + pluginId + "/scripts/mousemap"
+    ? sourceDir + "/scripts/maus-control"
+    : Quickshell.env("HOME") + "/.config/omarchy/plugins/" + pluginId + "/scripts/maus-control"
 
   // Every path this panel reads or writes, so a change to one of them is a
   // change to one line rather than a hunt through the process list.
-  readonly property string stateDir: Quickshell.env("HOME") + "/.local/state/omarchy-mousemap"
-  readonly property string configPath: Quickshell.env("HOME") + "/.config/omarchy/mousemap.json"
+  readonly property string stateDir: Quickshell.env("HOME") + "/.local/state/maus-control"
+  readonly property string configPath: Quickshell.env("HOME") + "/.config/omarchy/maus-control.json"
   readonly property string hyprPath: Quickshell.env("HOME") + "/.config/hypr/bindings.lua"
   readonly property string luaPath: stateDir + "/bindings.lua"
   readonly property string dpiPath: stateDir + "/dpi.json"
@@ -825,7 +825,7 @@ Item {
     stdout: StdioCollector { waitForEnd: true; onStreamFinished: readHyprProc.buffer = text }
     onExited: {
       var current = readHyprProc.buffer
-      var next = Config.withHook(current, "/.local/state/omarchy-mousemap/bindings.lua")
+      var next = Config.withHook(current, "/.local/state/maus-control/bindings.lua")
       root.applyStage = 6
       if (next === current) {
         // Already hooked, or an unclosed marker we refuse to guess at:
@@ -1106,7 +1106,7 @@ Item {
   }
 
   // Float the window once it exists. Hyprland cannot do this with a rule
-  // (see `mousemap float`), and the window is not mapped the instant open()
+  // (see `maus-control float`), and the window is not mapped the instant open()
   // returns, so this waits a beat rather than racing it.
   Timer {
     id: floatTimer
@@ -1126,7 +1126,7 @@ Item {
 
   FloatingWindow {
     id: window
-    title: "MouseMap — mouse buttons for Omarchy"
+    title: "Maus Control — mouse buttons for Omarchy"
     color: Color.background
     implicitWidth: 1180
     implicitHeight: 760
@@ -1169,7 +1169,7 @@ Item {
             RowLayout {
               spacing: Style.space(3)
               Text {
-                text: "MouseMap"
+                text: "Maus Control"
                 color: Color.foreground
                 font.family: Style.font.family
                 font.pixelSize: Style.font.heading
@@ -1749,7 +1749,7 @@ Item {
             text: root.learning ? "Cancel detect" : "Detect buttons"
             bordered: true
             selected: root.learning
-            tooltipText: "Walk through each button so MouseMap learns which ones exist and where they are."
+            tooltipText: "Walk through each button so Maus Control learns which ones exist and where they are."
             onClicked: root.learning ? root.cancelLearn() : root.startLearn()
           }
           Ui.Button {

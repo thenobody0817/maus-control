@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Install MouseMap into the Omarchy shell's plugin directory.
+# Install Maus Control into the Omarchy shell's plugin directory.
 #
 # The plugin folder is a real directory rather than a symlink to this repo:
 # Quickshell watches the plugin tree for changes and does not follow a
@@ -11,13 +11,13 @@
 set -euo pipefail
 
 SOURCE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-PLUGIN_ID="io.github.steezy-code.mousemap"
+PLUGIN_ID="local.maus.control"
 DEST="${XDG_CONFIG_HOME:-$HOME/.config}/omarchy/plugins/$PLUGIN_ID"
 
 # Only the files the shell needs; no .git, no tests, no scratch.
 FILES=(
   manifest.json
-  MouseMapPanel.qml
+  MausControlPanel.qml
   MouseCanvas.qml
   ActionPicker.qml
   BarWidget.qml
@@ -44,10 +44,10 @@ for file in "${FILES[@]}"; do
   cp -f "$SOURCE/$file" "$DEST/$file"
 done
 
-cp -f "$SOURCE/scripts/mousemap" "$DEST/scripts/mousemap"
-chmod +x "$DEST/scripts/mousemap"
+cp -f "$SOURCE/scripts/maus-control" "$DEST/scripts/maus-control"
+chmod +x "$DEST/scripts/maus-control"
 # An older install may still carry a diagnostic this plugin no longer ships.
-rm -f "$DEST/scripts/mousemap-sniff"
+rm -f "$DEST/scripts/maus-control-sniff"
 
 echo "Installed to $DEST"
 

@@ -14,7 +14,7 @@ const os = require("os")
 const path = require("path")
 const { execFileSync } = require("child_process")
 
-const script = path.join(__dirname, "..", "scripts", "mousemap")
+const script = path.join(__dirname, "..", "scripts", "maus-control")
 
 function payload(device) {
   // stderr is piped so the refusal cases below do not print through.
@@ -34,7 +34,7 @@ const hostile = [
   "a".repeat(128)
 ]
 
-const tmp = path.join(os.tmpdir(), "mousemap-learn-check.lua")
+const tmp = path.join(os.tmpdir(), "maus-control-learn-check.lua")
 
 for (const device of hostile) {
   const lua = payload(device)

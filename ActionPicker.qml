@@ -96,7 +96,7 @@ Item {
         anchors.fill: parent
         anchors.margins: Style.space(2)
         text: "This button types a keystroke rather than sending a mouse button. "
-            + "MouseMap catches it from this mouse only — your keyboard is unaffected."
+            + "Maus Control catches it from this mouse only — your keyboard is unaffected."
         wrapMode: Text.WordWrap
         color: Color.accent
         font.family: Style.font.family

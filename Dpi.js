@@ -1,6 +1,6 @@
 // Pointer speed, expressed in DPI, and the presets you switch between.
 //
-// Nothing here writes to the mouse. Like the rest of MouseMap, a preset is
+// Nothing here writes to the mouse. Like the rest of Maus Control, a preset is
 // a compositor setting scoped to one device, so the mouse behaves exactly
 // as it did out of the box on any other machine.
 //

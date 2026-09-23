@@ -187,7 +187,7 @@ for (const base of [Dpi.MIN_BASE, 400, 800, 1600, 3200, 12000, Dpi.MAX_BASE]) {
 
 // ---------------------------------------------------------------- lua
 
-const HELPER = "/home/some body/.config/omarchy/plugins/x/scripts/mousemap"
+const HELPER = "/home/some body/.config/omarchy/plugins/x/scripts/maus-control"
 const DEVICE = { key: "046d:4079:x", label: "G Pro", hyprName: "logitech-g-pro--1", hyprKbdName: "logitech-g-pro-" }
 
 function build(bindings, dpiConfig) {
@@ -199,7 +199,7 @@ function build(bindings, dpiConfig) {
 }
 
 function luaChecks(text) {
-  const tmp = path.join(os.tmpdir(), "mousemap-dpi-check.lua")
+  const tmp = path.join(os.tmpdir(), "maus-control-dpi-check.lua")
   fs.writeFileSync(tmp, text)
   try { execFileSync("luac", ["-p", tmp]) } finally { fs.unlinkSync(tmp) }
 }
@@ -259,7 +259,7 @@ io.write(table.concat(trace, "\\n"))
 // Run a generated file and drive the binds named in `drive`
 // ("mouse:275|down mouse:275|up"). Returns the trace as rows.
 function runLua(text, drive, home) {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "mousemap-lua-"))
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "maus-control-lua-"))
   const generated = path.join(dir, "bindings.lua")
   const harness = path.join(dir, "harness.lua")
   fs.writeFileSync(generated, text)
@@ -375,9 +375,9 @@ function deviceCalls(rows) {
 {
   const dpiConfig = Dpi.enable(Dpi.normalize({ base: 1600 }))
   const generated = build({}, dpiConfig)
-  const home = fs.mkdtempSync(path.join(os.tmpdir(), "mousemap-home-"))
-  fs.mkdirSync(path.join(home, ".local/state/omarchy-mousemap"), { recursive: true })
-  const state = path.join(home, ".local/state/omarchy-mousemap/dpi-active")
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), "maus-control-home-"))
+  fs.mkdirSync(path.join(home, ".local/state/maus-control"), { recursive: true })
+  const state = path.join(home, ".local/state/maus-control/dpi-active")
 
   fs.writeFileSync(state, "1\t1\n")
   let seen = deviceCalls(runLua(generated.text, "", home))
@@ -418,7 +418,7 @@ function deviceCalls(rows) {
   assert.strictEqual(generated.binds, 0)
   assert.strictEqual(generated.skipped.length, 1)
   assert.ok(/no DPI presets/.test(generated.skipped[0].reason), generated.skipped[0].reason)
-  assert.ok(!generated.text.includes("mm_step"), "nothing emitted for a refused bind")
+  assert.ok(!generated.text.includes("mc_step"), "nothing emitted for a refused bind")
 }
 
 // Presets with no bound button still apply, because choosing one in the
@@ -427,7 +427,7 @@ function deviceCalls(rows) {
   const generated = build({}, Dpi.enable(Dpi.blank()))
   assert.strictEqual(generated.binds, 0)
   assert.strictEqual(generated.dpi.length, 1)
-  assert.ok(generated.text.includes("mm_apply(1)"))
+  assert.ok(generated.text.includes("mc_apply(1)"))
   luaChecks(generated.text)
 }
 
@@ -444,9 +444,9 @@ function deviceCalls(rows) {
   const generated = C.generateLua([DEVICE, second], config, A, Dpi, HELPER)
   assert.strictEqual(generated.dpi.length, 2)
   assert.strictEqual(generated.binds, 2)
-  assert.ok(generated.text.includes("mm_step(1, 1)") && generated.text.includes("mm_step(2, 1)"),
+  assert.ok(generated.text.includes("mc_step(1, 1)") && generated.text.includes("mc_step(2, 1)"),
     "each mouse cycles its own presets")
-  assert.ok(generated.text.includes('mm_names[2] = "mx-master"'))
+  assert.ok(generated.text.includes('mc_names[2] = "mx-master"'))
   luaChecks(generated.text)
 
   // The sidecar the helper reads is in the same slot order as the Lua.
@@ -495,17 +495,17 @@ function deviceCalls(rows) {
 {
   const generated = build({ "275": { action: "dpi-cycle" } }, Dpi.enable(Dpi.blank()))
   const quoted = execFileSync("lua", ["-e", `
-    local mm_helper = ${A.luaString(HELPER)}
-    local function mm_quote(value)
+    local mc_helper = ${A.luaString(HELPER)}
+    local function mc_quote(value)
       return "'" .. tostring(value):gsub("'", "'\\\\''") .. "'"
     end
-    io.write(mm_quote(mm_helper))
+    io.write(mc_quote(mc_helper))
   `], { encoding: "utf8" })
   // Round-trip it through a real shell: the quoted form must come back as
   // exactly one argument holding exactly the original path.
   const back = execFileSync("sh", ["-c", `printf '%s\\n' ${quoted}`], { encoding: "utf8" })
   assert.strictEqual(back, HELPER + "\n", "helper path did not survive shell quoting")
-  assert.ok(generated.text.includes("mm_quote(mm_helper)"))
+  assert.ok(generated.text.includes("mc_quote(mc_helper)"))
 }
 
 console.log("dpi: all assertions passed")

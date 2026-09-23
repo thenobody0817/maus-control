@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# MouseMap's only path to the filesystem and the compositor.
+# Maus Control's only path to the filesystem and the compositor.
 #
 # The panel owns all the logic — which buttons exist, what they should do,
 # what Lua that becomes. This script exists for the three things QML cannot
@@ -12,8 +12,8 @@
 
 set -euo pipefail
 
-STATE_DIR="${XDG_STATE_HOME:-$HOME/.local/state}/omarchy-mousemap"
-CONFIG="${XDG_CONFIG_HOME:-$HOME/.config}/omarchy/mousemap.json"
+STATE_DIR="${XDG_STATE_HOME:-$HOME/.local/state}/maus-control"
+CONFIG="${XDG_CONFIG_HOME:-$HOME/.config}/omarchy/maus-control.json"
 BINDINGS_LUA="$STATE_DIR/bindings.lua"
 HYPR_BINDINGS="${XDG_CONFIG_HOME:-$HOME/.config}/hypr/bindings.lua"
 
@@ -25,7 +25,7 @@ DPI_ACTIVE="$STATE_DIR/dpi-active"
 # Refuse anything absurd rather than streaming it into the panel.
 MAX_BYTES=1048576
 
-die() { printf 'mousemap: %s\n' "$*" >&2; exit 1; }
+die() { printf 'maus-control: %s\n' "$*" >&2; exit 1; }
 
 # ---------------------------------------------------------------- helpers
 
@@ -41,7 +41,7 @@ cmd_write() {
   mkdir -p "$dir"
 
   local tmp
-  tmp="$(mktemp "$dir/.mousemap.XXXXXXXX")"
+  tmp="$(mktemp "$dir/.maus-control.XXXXXXXX")"
   # Any failure from here on must not leave the stage behind.
   trap 'rm -f "$tmp"' EXIT
   cat >"$tmp"
@@ -64,7 +64,7 @@ cmd_read() {
 # file as it was before this plugin touched anything.
 cmd_backup() {
   local path="${1:-$HYPR_BINDINGS}"
-  local backup="$path.mousemap.bak"
+  local backup="$path.maus-control.bak"
   [ -f "$path" ] || return 0
   [ -e "$backup" ] && return 0
   cp -p -- "$path" "$backup"
@@ -239,7 +239,7 @@ for code in os.environ["CODES"].split():
     key = lua_string("mouse:" + code)
     out.append("pcall(hl.unbind, %s)" % key)
     out.append("hl.bind(%s, function() %s end, { description = %s })"
-               % (key, logger(code), lua_string("MouseMap learn " + code)))
+               % (key, logger(code), lua_string("Maus Control learn " + code)))
 
 # A mouse whose onboard profile assigns a button a keystroke sends it from
 # the receiver keyboard interface, so a mouse-only probe never sees it.
@@ -253,7 +253,7 @@ if kbd:
         out.append("pcall(hl.unbind, %s)" % key)
         out.append("hl.bind(%s, function() %s end, { description = %s, %s })"
                    % (key, logger("$(( %d + %d ))" % (base, kc)),
-                      lua_string("MouseMap learn key %d" % kc), scope))
+                      lua_string("Maus Control learn key %d" % kc), scope))
 
 print(" ".join(out))
 '
@@ -274,7 +274,7 @@ cmd_learn() {
       # yet", which is the worst possible failure for a screen whose only
       # instruction is to press something.
       hyprctl binds -j 2>/dev/null \
-        | grep -c 'MouseMap learn' \
+        | grep -c 'Maus Control learn' \
         || echo 0
       ;;
     payload)
@@ -471,7 +471,7 @@ print(json.dumps(sidecar))
 # So the window is floated by address after it appears. Only a window that
 # is currently tiled is touched, which leaves a user who deliberately tiled
 # it alone.
-PANEL_TITLE_PREFIX="MouseMap"
+PANEL_TITLE_PREFIX="Maus Control"
 PANEL_W=1180
 PANEL_H=780
 
@@ -525,9 +525,9 @@ print(json.dumps({
 cmd_status() {
   printf 'config      %s %s\n' "$CONFIG" "$([ -f "$CONFIG" ] && echo '(present)' || echo '(none)')"
   printf 'bindings    %s %s\n' "$BINDINGS_LUA" "$([ -f "$BINDINGS_LUA" ] && echo '(present)' || echo '(none)')"
-  printf 'hook        %s\n' "$(grep -q 'BEGIN mousemap' "$HYPR_BINDINGS" 2>/dev/null && echo 'installed' || echo 'not installed')"
+  printf 'hook        %s\n' "$(grep -q 'BEGIN maus-control' "$HYPR_BINDINGS" 2>/dev/null && echo 'installed' || echo 'not installed')"
   if [ -f "$BINDINGS_LUA" ]; then
-    printf 'live binds  %s\n' "$(hyprctl binds -j 2>/dev/null | grep -c 'MouseMap:' || echo 0)"
+    printf 'live binds  %s\n' "$(hyprctl binds -j 2>/dev/null | grep -c 'Maus Control:' || echo 0)"
   fi
   if [ -f "$DPI_SIDECAR" ]; then
     dpi_status | python3 -c '
@@ -565,7 +565,7 @@ case "${1:-}" in
   status)  cmd_status ;;
   *)
     cat >&2 <<'USAGE'
-usage: mousemap <command>
+usage: maus-control <command>
 
   detect            gather /proc + hyprctl input state as JSON
   read <path>       print a file, bounded and symlink-refusing

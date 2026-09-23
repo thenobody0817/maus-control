@@ -1,18 +1,18 @@
 {
   "schemaVersion": 1,
-  "id": "io.github.steezy-code.mousemap",
-  "name": "MouseMap",
+  "id": "local.maus.control",
+  "name": "Maus Control",
   "version": "1.1.0",
-  "author": "Steezy-code",
+  "author": "thenobody0817",
   "license": "MIT",
   "description": "See every button on your mouse laid out on a diagram, with leader lines to what each one does, and rebind them to any shortcut. Switch between named DPI presets, and put one on a thumb button. Reads whichever mouse is plugged in and redraws itself to match. Nothing is ever written to the mouse.",
   "kinds": ["panel", "bar-widget"],
   "entryPoints": {
-    "panel": "MouseMapPanel.qml",
+    "panel": "MausControlPanel.qml",
     "barWidget": "BarWidget.qml"
   },
   "barWidget": {
-    "displayName": "MouseMap",
+    "displayName": "Maus Control",
     "description": "Open the mouse button map.",
     "category": "Hardware",
     "defaultSection": "right",

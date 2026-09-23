@@ -1,4 +1,4 @@
-# MouseMap
+# Maus Control
 
 An Omarchy shell plugin that shows every button on your mouse on a diagram,
 with a leader line from each button to a label saying what it does — and lets
@@ -18,7 +18,7 @@ This is the important difference from Piper / libratbag, which is the usual
 answer to remapping a mouse on Linux. Piper flashes the mouse's **onboard
 memory**, so your remaps follow the device to every machine you plug it into.
 
-MouseMap never touches the hardware. Everything it does is a Hyprland setting
+Maus Control never touches the hardware. Everything it does is a Hyprland setting
 on *this* machine, scoped to *this* device name — a keybinding, or a pointer
 speed. Plug the mouse into another computer and it behaves exactly as it did
 out of the box.
@@ -26,22 +26,22 @@ out of the box.
 ## Install
 
 ```bash
-omarchy plugin add https://github.com/Steezy-code/omarchy-mousemap --enable
+omarchy plugin add https://github.com/thenobody0817/maus-control --enable
 ```
 
 That clones the repository into `~/.config/omarchy/plugins/` and enables it.
 Open the map from its bar icon, or:
 
 ```bash
-omarchy-shell shell toggle io.github.steezy-code.mousemap
+omarchy-shell shell toggle local.maus.control
 ```
 
 The first time you open the panel it sets itself up, because the panel cannot
 draw itself without it: the window rule that floats this window lives in the
 file it generates. Setup writes that generated file under
-`~/.local/state/omarchy-mousemap/`, takes a one-time backup of
-`~/.config/hypr/bindings.lua` at `bindings.lua.mousemap.bak`, and adds one
-`dofile` line to it inside `-- BEGIN mousemap` markers.
+`~/.local/state/maus-control/`, takes a one-time backup of
+`~/.config/hypr/bindings.lua` at `bindings.lua.maus-control.bak`, and adds one
+`dofile` line to it inside `-- BEGIN maus-control` markers.
 
 That line is the only change ever made to a file you wrote, and nothing of
 yours is rewritten — everything outside the markers is preserved byte for
@@ -51,7 +51,7 @@ choose an action and press **Apply**.
 To update later:
 
 ```bash
-omarchy plugin update io.github.steezy-code.mousemap
+omarchy plugin update local.maus.control
 ```
 
 ### Requirements
@@ -73,7 +73,7 @@ nothing; nothing else is affected.
 ```
 
 `install` copies this checkout into
-`~/.config/omarchy/plugins/io.github.steezy-code.mousemap`. It copies rather
+`~/.config/omarchy/plugins/local.maus.control`. It copies rather
 than symlinks on purpose: Quickshell watches the plugin tree for changes and
 does not follow a symlinked directory, so a symlinked install silently stops
 hot-reloading. (The marketplace refuses symlinks inside a plugin folder for a
@@ -81,6 +81,27 @@ better reason: a symlink in a trusted plugin directory can point anywhere.)
 
 Re-run `./install` after editing. QML components are cached once loaded, so
 changes to an already-open panel need `omarchy restart shell`.
+
+### This fork
+
+This is a personal fork of
+[Steezy-code/omarchy-mousemap](https://github.com/Steezy-code/omarchy-mousemap),
+renamed to Maus Control. The upstream project is the origin of everything
+here except the wheel-speed feature and the rename; the licence and the
+original authorship are unchanged.
+
+The fork is developed on `main` and tracks upstream with a second remote. To
+fold in an upstream change:
+
+```bash
+git fetch upstream
+git rebase upstream/main
+```
+
+`omarchy plugin update` is fast-forward only, so it will refuse while local
+commits sit on `main` — that refusal is what keeps this fork from being
+overwritten by the upstream release. Pull upstream deliberately with the
+rebase above instead.
 
 ## Using it
 
@@ -131,7 +152,7 @@ nothing — and then:
 effective = base × (1 + sensitivity)
 ```
 
-`base` is what the mouse's own sensor is set to. MouseMap cannot read it and
+`base` is what the mouse's own sensor is set to. Maus Control cannot read it and
 never changes it; you tell it in the panel, and set the sensor itself with
 your mouse's own configurator — `solaar`, `piper`/`ratbagd`, or a vendor tool
 such as G HUB.
@@ -185,7 +206,7 @@ mouse button at all — see below.
 ### Battery
 
 Wireless mice that speak HID++ report their charge through the kernel, and
-MouseMap shows it in the header and draws it on the mouse's palm. The reading
+Maus Control shows it in the header and draws it on the mouse's palm. The reading
 is matched to the mouse by sysfs path rather than by name, so it stays correct
 when two of the same model are paired to one receiver. Wired mice simply have
 no battery section.
@@ -199,7 +220,7 @@ pointer one — vendor configurators all do this, Logitech's G HUB and Razer's
 Synapse among them. A gaming mouse can easily have one thumb button sending
 `2` and the other sending `Left Ctrl`.
 
-MouseMap handles these. The same physical mouse appears in Hyprland a second
+Maus Control handles these. The same physical mouse appears in Hyprland a second
 time as a keyboard, with its own device name, so the key can be bound scoped
 to *that* device — the mouse and nothing else. Your real keyboard keeps
 working normally, and the button stops typing because the compositor now
@@ -221,22 +242,22 @@ follow the device to other machines.
 
 If a button still never shows up — in **Detect buttons** or **Test
 placement** — the compositor is not receiving anything from it, and the only
-place left to look is the raw kernel event stream. MouseMap deliberately ships
+place left to look is the raw kernel event stream. Maus Control deliberately ships
 nothing for that. Reading `/dev/input/event*` needs root, and root should only
 ever run code that cannot be swapped out while the password prompt is open,
 which rules out anything in a plugin folder the desktop user can write to. Use
 a packaged, root-owned tool instead, such as `evtest` from the Arch
 repositories.
 
-Nothing in MouseMap runs with elevated privileges, at any point.
+Nothing in Maus Control runs with elevated privileges, at any point.
 
 ## How it works
 
 ```
-~/.config/omarchy/mousemap.json          your mapping (source of truth)
+~/.config/omarchy/maus-control.json          your mapping (source of truth)
         │
         ▼  generated on Apply
-~/.local/state/omarchy-mousemap/
+~/.local/state/maus-control/
    bindings.lua    the binds and the DPI runtime
    dpi.json        preset names and numbers, for the overlay
    dpi-active      which preset each mouse is on
@@ -247,8 +268,8 @@ Nothing in MouseMap runs with elevated privileges, at any point.
 
 The plugin generates whole files it owns, rather than editing a fenced block
 inside your hand-written `bindings.lua`. The only change to your own config is
-a single `dofile` line inside `-- BEGIN mousemap` markers, and a one-time
-backup is taken at `bindings.lua.mousemap.bak` before that line is ever added.
+a single `dofile` line inside `-- BEGIN maus-control` markers, and a one-time
+backup is taken at `bindings.lua.maus-control.bak` before that line is ever added.
 
 `dofile` rather than `require`: Hyprland's bootstrap only clears
 `package.loaded` for the `default.hypr`, `hypr` and theme prefixes, so a
@@ -259,7 +280,7 @@ Bindings and pointer speed are both scoped to the device with Hyprland's
 `device` option, so two different mice can carry two different maps.
 
 Everything that touches the filesystem or the compositor goes through
-`scripts/mousemap`, so there is one place to read to know what this plugin can
+`scripts/maus-control`, so there is one place to read to know what this plugin can
 do. Nothing generated ever interpolates a name into a shell command: a DPI
 bind passes the helper two integers, and the helper looks up what they mean.
 
@@ -310,10 +331,10 @@ anchors also call, so a side-button marker can never drift off the drawn edge.
 | `Dpi.js` | DPI presets, and the sensitivity arithmetic behind them |
 | `Config.js` | config shape, Lua generation, the loader hook |
 | `MouseCanvas.qml` | the diagram |
-| `MouseMapPanel.qml` | the panel |
+| `MausControlPanel.qml` | the panel |
 | `ActionPicker.qml` | the rebinding sidebar |
 | `DpiPanel.qml` | the DPI sidebar |
-| `scripts/mousemap` | the only path to the filesystem and the compositor |
+| `scripts/maus-control` | the only path to the filesystem and the compositor |
 
 ## Tests
 
@@ -348,19 +369,19 @@ and holds every other file that repeats the plugin id to it.
 ## Uninstall
 
 ```bash
-omarchy plugin remove io.github.steezy-code.mousemap
+omarchy plugin remove local.maus.control
 ```
 
-Then delete the `-- BEGIN mousemap` … `-- END mousemap` block from
+Then delete the `-- BEGIN maus-control` … `-- END maus-control` block from
 `~/.config/hypr/bindings.lua` and run `hyprctl reload`. Your original file is
-at `~/.config/hypr/bindings.lua.mousemap.bak`.
+at `~/.config/hypr/bindings.lua.maus-control.bak`.
 
 Your mapping and the generated files are left behind in case you come back;
 remove them with:
 
 ```bash
-rm -f  ~/.config/omarchy/mousemap.json
-rm -rf ~/.local/state/omarchy-mousemap
+rm -f  ~/.config/omarchy/maus-control.json
+rm -rf ~/.local/state/maus-control
 ```
 
 ## License

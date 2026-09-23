@@ -448,11 +448,11 @@ function emitBody(resolved, indent) {
 function emitDpi(resolved, pad) {
   var slot = parseInt(resolved.slot, 10) || 0
   if (slot <= 0) return pad + "-- no DPI runtime for this device"
-  if (resolved.mode === "step") return pad + "mm_step(" + slot + ", " + (resolved.delta < 0 ? -1 : 1) + ")"
+  if (resolved.mode === "step") return pad + "mc_step(" + slot + ", " + (resolved.delta < 0 ? -1 : 1) + ")"
   // Presets are zero-based everywhere in the config and one-based in Lua.
   var index = (parseInt(resolved.preset, 10) || 0) + 1
-  if (resolved.mode === "hold") return pad + "mm_hold(" + slot + ", " + index + ")"
-  return pad + "mm_select(" + slot + ", " + index + ")"
+  if (resolved.mode === "hold") return pad + "mc_hold(" + slot + ", " + index + ")"
+  return pad + "mc_select(" + slot + ", " + index + ")"
 }
 
 // The body of the *release* bind, for an action that needs both edges, or
@@ -461,7 +461,7 @@ function emitReleaseBody(resolved, indent) {
   if (!resolved || !resolved.release) return ""
   var slot = parseInt(resolved.slot, 10) || 0
   if (slot <= 0) return ""
-  return (indent || "  ") + "mm_release(" + slot + ")"
+  return (indent || "  ") + "mc_release(" + slot + ")"
 }
 
 if (typeof module !== "undefined") {

@@ -6,7 +6,7 @@ const Dpi = require("../Dpi.js")
 const fs = require("fs")
 
 // The path the generated DPI binds call back into.
-const HELPER = "/home/somebody/.config/omarchy/plugins/x/scripts/mousemap"
+const HELPER = "/home/somebody/.config/omarchy/plugins/x/scripts/maus-control"
 
 // ---------------------------------------------------------------- escaping
 
@@ -26,7 +26,7 @@ function luaRoundTrip(value) {
   return execFileSync("lua", ["-e", `io.write(${A.luaString(value)})`], { encoding: "utf8" })
 }
 for (const hostile of [
-  '"); os.execute("touch /tmp/mousemap-pwned"); ("',  // close string, run code
+  '"); os.execute("touch /tmp/maus-control-pwned"); ("',  // close string, run code
   "]]..os.execute('x')..[[",                          // break out of a long bracket
   'a\\"); print(1); ("',                              // pre-escaped quote
   "tab\there and newline\nhere",
@@ -147,18 +147,18 @@ assert.ok(!globalGen.text.includes("device = {"), "global binds carry no device 
 
 // ---------------------------------------------------------------- hook
 
-const STATE = "/.local/state/omarchy-mousemap/bindings.lua"
+const STATE = "/.local/state/maus-control/bindings.lua"
 const original = "-- my config\no.bind(\"SUPER + K\", \"x\", \"y\")\n"
 const hooked = C.withHook(original, STATE)
 assert.ok(C.hasHook(hooked))
 assert.ok(hooked.startsWith(original), "existing content untouched")
 // Re-hooking is idempotent: exactly one block, ever.
 assert.strictEqual(C.withHook(hooked, STATE), hooked)
-assert.strictEqual((hooked.match(/BEGIN mousemap/g) || []).length, 1)
+assert.strictEqual((hooked.match(/BEGIN maus-control/g) || []).length, 1)
 // And it round-trips back to the original.
 assert.strictEqual(C.withoutHook(hooked), original)
 // An unclosed marker is left strictly alone rather than guessed at.
-const broken = original + "\n-- BEGIN mousemap\nhalf a block\n"
+const broken = original + "\n-- BEGIN maus-control\nhalf a block\n"
 assert.strictEqual(C.withHook(broken, STATE), broken)
 
 // ---------------------------------------------------------------- real hw
@@ -198,7 +198,7 @@ console.log("config + actions + devices: all assertions passed")
 // is not good enough: hand it to the real Lua parser.
 {
   const os_ = require("os"), path = require("path")
-  const tmp = path.join(os_.tmpdir(), "mousemap-syntax-check.lua")
+  const tmp = path.join(os_.tmpdir(), "maus-control-syntax-check.lua")
   fs.writeFileSync(tmp, gen.text)
   execFileSync("luac", ["-p", tmp])           // throws on a syntax error
   fs.writeFileSync(tmp, globalGen.text)
@@ -335,7 +335,7 @@ for (const id of [0, 0x10f, 0x120, 0xfff, C.KEY_BASE - 1, C.KEY_BASE + 256, NaN]
 {
   // A call carrying no string argument, so masking the literals cannot hide
   // it: if this identifier survives in the code, the comment was escaped.
-  const payload = "mousemap_escape_marker()"
+  const payload = "maus-control_escape_marker()"
   const hostile = "Mouse\n" + payload + "\n-- "
 
   const devices = [{ key: "k", label: hostile, hyprName: hostile, hyprKbdName: "kbd" }]
@@ -351,7 +351,7 @@ for (const id of [0, 0x10f, 0x120, 0xfff, C.KEY_BASE - 1, C.KEY_BASE + 256, NaN]
 
   const generated = C.generateLua(devices, config, A, Dpi, HELPER)
   const os2 = require("os"), path2 = require("path")
-  const tmp = path2.join(os2.tmpdir(), "mousemap-comment-check.lua")
+  const tmp = path2.join(os2.tmpdir(), "maus-control-comment-check.lua")
   fs.writeFileSync(tmp, generated.text)
   execFileSync("luac", ["-p", tmp])          // still a valid program
   fs.rmSync(tmp, { force: true })
@@ -362,7 +362,7 @@ for (const id of [0, 0x10f, 0x120, 0xfff, C.KEY_BASE - 1, C.KEY_BASE + 256, NaN]
   const masked = generated.text.replace(/"(?:[^"\\]|\\.)*"/g, '""')
   const code = masked.split("\n").map(l => l.replace(/--.*$/, "")).join("\n")
 
-  assert.ok(!code.includes("mousemap_escape_marker"),
+  assert.ok(!code.includes("maus-control_escape_marker"),
     "the comment was escaped: the payload became a statement")
   const leaked = code.match(/.*Mouse.*/)
   assert.ok(!leaked, () => `hostile text escaped: ${JSON.stringify(leaked && leaked[0])}`)

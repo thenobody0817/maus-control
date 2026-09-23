@@ -381,7 +381,7 @@ Item {
 
         Text {
           Layout.fillWidth: true
-          text: "What the sensor itself is set to. MouseMap never changes it and "
+          text: "What the sensor itself is set to. Maus Control never changes it and "
               + "cannot read it — set it with your mouse's own configurator "
               + "(Solaar, Piper, or a vendor tool) and say so here."
           wrapMode: Text.WordWrap
