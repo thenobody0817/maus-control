@@ -1514,7 +1514,7 @@ Item {
                     font.pixelSize: Style.font.bodySmall
                     font.weight: Font.DemiBold
                     elide: Text.ElideRight
-                    horizontalAlignment: modelData.side === "left" ? Text.AlignRight : Text.AlignLeft
+                    horizontalAlignment: Text.AlignHCenter
                   }
                   Text {
                     Layout.fillWidth: true
@@ -1529,7 +1529,7 @@ Item {
                     font.pixelSize: Style.font.caption
                     font.italic: !chip.live
                     elide: Text.ElideRight
-                    horizontalAlignment: modelData.side === "left" ? Text.AlignRight : Text.AlignLeft
+                    horizontalAlignment: Text.AlignHCenter
                   }
                   Item { Layout.fillHeight: true }
                 }
