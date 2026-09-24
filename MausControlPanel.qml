@@ -556,7 +556,10 @@ Item {
       boxW: Profiles.BOX_W,
       boxH: Profiles.BOX_H,
       minShellHeight: Style.space(120),
-      minShellWidth: 50
+      minShellWidth: 50,
+      // A mouse does not need to be the size of the window. This caps how
+      // large it grows; past it the extra height just spaces the labels.
+      maxShellHeight: Style.space(300)
     })
     return {
       shell: Qt.rect(m.shell.x, m.shell.y, m.shell.w, m.shell.h),
