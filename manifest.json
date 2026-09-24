@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "id": "local.maus.control",
   "name": "Maus Control",
-  "version": "1.3.0",
+  "version": "1.4.0",
   "author": "thenobody0817",
   "license": "MIT",
   "description": "See every button on your mouse laid out on a diagram, with leader lines to what each one does, and rebind them to any shortcut. Tune pointer sensitivity per mouse — acceleration profile, declared sensor DPI, and named presets you can put on a thumb button — and set the wheel speed. Reads whichever mouse is plugged in and redraws itself to match. Nothing is ever written to the mouse.",

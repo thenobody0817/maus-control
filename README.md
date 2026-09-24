@@ -332,11 +332,22 @@ Super+Ctrl+X. The panel says so when you record a chord carrying Super.
 
 ## Layout
 
-The label placement is isotonic regression (pool-adjacent-violators). Each
-chip wants to sit at its button's height; chips must not overlap; and leaders
-must not cross. The third falls out of the second as long as chips keep their
-anchors' vertical order, which makes the whole thing one-dimensional and
-exactly solvable.
+The panel rearranges itself with the window instead of assuming one size. A
+top bar carries the device and the mode switch; the side pane docks beside the
+diagram when there is room (≥ roughly 980px at your font size) and floats over
+it as an opaque drawer when there is not, so the mouse keeps the full width
+where it matters most. The diagram measures its own labels and sizes the
+gutters from them, then fills whatever height is left, so a large window shows
+a large mouse rather than a capped one with dead space around it. The
+breakpoints live in `Layout.js`, scaled by the theme's spacing so a larger
+font moves them with it, and are unit-tested in `test_layout.js`. The window
+floor is ~720×520 (in theme units).
+
+The chip placement itself is isotonic regression (pool-adjacent-violators).
+Each chip wants to sit at its button's height; chips must not overlap; and
+leaders must not cross. The third falls out of the second as long as chips
+keep their anchors' vertical order, which makes the whole thing one-dimensional
+and exactly solvable.
 
 The obvious greedy alternative — push each label down until it fits — drifts
 badly once a cluster forms near the top, shoving every label below it down
@@ -353,12 +364,17 @@ anchors also call, so a side-button marker can never drift off the drawn edge.
 | `Devices.js` | discovery: evdev capabilities, receiver detection, battery join |
 | `Profiles.js` | shell geometry and the known-device table |
 | `Leaders.js` | label placement and leader routing |
+| `Layout.js` | responsive breakpoints and diagram geometry |
 | `Actions.js` | what a button can do, and the Lua it compiles to |
 | `Sens.js` | sensitivity presets, profiles, and the DPI arithmetic behind them |
 | `Scroll.js` | wheel speed, as a per-device multiplier |
 | `Config.js` | config shape, Lua generation, the loader hook |
 | `MouseCanvas.qml` | the diagram |
-| `MausControlPanel.qml` | the panel |
+| `MausControlPanel.qml` | the panel: state, geometry, processes |
+| `PanelTopBar.qml` | device summary and the mode switch |
+| `PanelBottomBar.qml` | status and the action buttons |
+| `SidePane.qml` | the docked/overlay pane host |
+| `DetectPanel.qml` | the guided detection wizard |
 | `ActionPicker.qml` | the rebinding sidebar |
 | `SensPanel.qml` | the sensitivity sidebar |
 | `ScrollPanel.qml` | the wheel-speed sidebar |
@@ -387,6 +403,11 @@ generated file is executed by the compositor. It also holds the two copies
 of the trigger rules — `Config` generates the bind string, `Devices` states
 it for the UI — to each other across the whole id space, because two copies
 of one rule is how keystroke buttons were silently dropped once already.
+
+`test_layout.js` checks the responsive breakpoints and the diagram geometry:
+that the mode only moves one way as the window grows, that the side pane stays
+within its bounds, and that the shell and gutters never overflow or go
+negative at any size.
 
 `test_scroll.js` checks the multiplier's clamp, step and literal formatting,
 that every slider position compiles to a Lua number, and that the emitted

@@ -19,6 +19,10 @@ FILES=(
   manifest.json
   MausControlPanel.qml
   MouseCanvas.qml
+  PanelTopBar.qml
+  PanelBottomBar.qml
+  SidePane.qml
+  DetectPanel.qml
   ActionPicker.qml
   BarWidget.qml
   SensPanel.qml
@@ -27,6 +31,7 @@ FILES=(
   Profiles.js
   Sens.js
   Scroll.js
+  Layout.js
   Leaders.js
   Actions.js
   Config.js

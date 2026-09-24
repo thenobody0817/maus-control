@@ -32,9 +32,19 @@ Item {
       ? Math.max(0, Math.min(1, (config.factor - Scroll.MIN_FACTOR) / span)) : 0
   }
 
-  ColumnLayout {
+  // Everything scrolls as one, so a short window can still reach the
+  // footer instead of clipping it.
+  Flickable {
     anchors.fill: parent
-    spacing: Style.space(3)
+    contentWidth: width
+    contentHeight: content.implicitHeight
+    clip: true
+    boundsBehavior: Flickable.StopAtBounds
+
+    ColumnLayout {
+      id: content
+      width: parent.width
+      spacing: Style.space(3)
 
     // ---------------------------------------------------------- header
     RowLayout {
@@ -116,8 +126,12 @@ Item {
 
       ColumnLayout {
         id: readout
-        anchors.fill: parent
-        anchors.margins: Style.space(3)
+        // Positioned, not anchored to fill: the parent's implicit height is
+        // this ColumnLayout's height, so anchoring would make each depend on
+        // the other and QML would rearrange forever.
+        x: Style.space(3)
+        y: Style.space(3)
+        width: parent.width - 2 * Style.space(3)
         spacing: Style.space(2)
 
         RowLayout {
@@ -139,7 +153,7 @@ Item {
             font.family: Style.font.family
             font.pixelSize: Style.font.body
             elide: Text.ElideRight
-            Layout.maximumWidth: parent.width * 0.45
+            Layout.maximumWidth: readout.width * 0.45
           }
         }
 
@@ -252,5 +266,6 @@ Item {
         onClicked: root.panel.scrollOpen = false
       }
     }
+  }
   }
 }

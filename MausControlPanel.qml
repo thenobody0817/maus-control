@@ -11,6 +11,7 @@ import "Actions.js" as Actions
 import "Config.js" as Config
 import "Sens.js" as Sens
 import "Scroll.js" as Scroll
+import "Layout.js" as PanelLayout
 
 // Maus Control — see what every button on your mouse does, and change it.
 //
@@ -64,6 +65,41 @@ Item {
   property string status: ""
   property bool statusBad: false
   property bool busy: false
+
+  // ------------------------------------------------------------ layout
+  //
+  // Everything that rearranges with the window is decided here, from the
+  // window's own size and the theme's spacing scale, so the breakpoints move
+  // when the font does. See Layout.js.
+
+  readonly property real uiScale: Style.effectiveSpacingScale
+  readonly property var layoutInfo: PanelLayout.layout(window.width, window.height, uiScale)
+  readonly property bool paneDocked: layoutInfo.mode === "docked"
+  readonly property int sidePaneWidth: layoutInfo.sideWidth
+  readonly property bool deviceDetail: layoutInfo.deviceDetail
+  readonly property string chromeMode: layoutInfo.chrome
+
+  // The side pane has exactly one occupant at a time.
+  readonly property string mode: learning ? "detect"
+    : (selectedCode >= 0 ? "inspector"
+    : (sensOpen ? "sens"
+    : (scrollOpen ? "scroll" : "map")))
+  readonly property bool paneOpen: mode !== "map"
+
+  function setMode(next) {
+    if (next === "sens") openSens()
+    else if (next === "scroll") openScroll()
+    else { selectedCode = -1; capturing = false; sensOpen = false; scrollOpen = false }
+  }
+
+  function revert() {
+    selectedCode = -1
+    sensOpen = false
+    scrollOpen = false
+    readConfigProc.running = true
+    dirty = false
+    say("")
+  }
 
   property bool learning: false
   property var learnedCodes: []
@@ -468,41 +504,64 @@ Item {
   // canvas and the chips, so the drawing and the hit targets are the same
   // numbers rather than two parallel calculations.
 
-  readonly property int gutterWidth: 224
-  readonly property int gutterGap: 30
   readonly property int chipHeight: 40
   readonly property int chipGap: 9
+  readonly property int gutterGap: Style.space(24)
 
-  // Cap on how big the shell is allowed to get. Without it the mouse grows
-  // to whatever height the window has and swamps the labels, which are the
-  // part you actually read.
-  readonly property int maxShellHeight: 480
+  // The gutter is sized from what the labels actually measure, so the mouse
+  // gets the rest of the pane instead of a fixed slab of empty space.
+  //
+  // FontMetrics measures by function call rather than by setting a `text`
+  // property, which would make this binding depend on the very objects it
+  // writes and QML would flag it as a loop.
+  FontMetrics {
+    id: roleFont
+    font.family: Style.font.family
+    font.pixelSize: Style.font.bodySmall
+    font.weight: Font.DemiBold
+  }
+  FontMetrics {
+    id: actionFont
+    font.family: Style.font.family
+    font.pixelSize: Style.font.caption
+  }
 
-  // The whole composition — gutter, shell, gutter — is sized together and
-  // centred as a unit, so the chips stay beside the mouse instead of being
-  // flung out to the window edges when the window is wide.
-  function metrics(w, h) {
-    var shellH = Math.min(Math.max(150, h - 40), maxShellHeight)
-    var shellW = shellH * (Profiles.BOX_W / Profiles.BOX_H)
-
-    var sides = 2 * (gutterWidth + gutterGap)
-    if (sides + shellW > w) {
-      shellW = Math.max(50, w - sides)
-      shellH = shellW * (Profiles.BOX_H / Profiles.BOX_W)
-      if (shellH > h - 24) {
-        shellH = Math.max(80, h - 24)
-        shellW = shellH * (Profiles.BOX_W / Profiles.BOX_H)
-      }
+  readonly property real measuredChipWidth: {
+    configRev
+    var widest = 0
+    for (var i = 0; i < buttonList.length; i++) {
+      var meta = buttonMeta(buttonList[i].code)
+      widest = Math.max(widest, roleFont.advanceWidth(meta.role))
+      var resolved = resolvedFor(buttonList[i].code)
+      var action = resolved.ok
+        ? (resolved.detail && resolved.detail !== resolved.label
+           ? resolved.label + "  " + resolved.detail : resolved.label)
+        : "default"
+      widest = Math.max(widest, actionFont.advanceWidth(action))
     }
+    return widest
+  }
 
-    var total = sides + shellW
-    var originX = Math.max(0, (w - total) / 2)
-    var shellX = originX + gutterWidth + gutterGap
+  readonly property int gutterWidth: PanelLayout.chipWidth(measuredChipWidth, uiScale)
 
+  // The whole composition — gutter, shell, gutter — is sized together by
+  // Layout.js and centred as a unit, so the chips stay beside the mouse
+  // instead of being flung out to the window edges when the window is wide.
+  // The shell uses the pane's height rather than a fixed cap.
+  function metrics(w, h) {
+    var m = PanelLayout.diagramMetrics(w, h, {
+      gutterWidth: gutterWidth,
+      gutterGap: gutterGap,
+      inset: Style.space(8),
+      boxW: Profiles.BOX_W,
+      boxH: Profiles.BOX_H,
+      minShellHeight: Style.space(120),
+      minShellWidth: 50
+    })
     return {
-      shell: Qt.rect(shellX, (h - shellH) / 2, shellW, shellH),
-      left: { x: originX, width: gutterWidth },
-      right: { x: shellX + shellW + gutterGap, width: gutterWidth }
+      shell: Qt.rect(m.shell.x, m.shell.y, m.shell.w, m.shell.h),
+      left: m.left,
+      right: m.right
     }
   }
 
@@ -1238,8 +1297,10 @@ Item {
     title: "Maus Control — mouse buttons for Omarchy"
     color: Color.background
     implicitWidth: 1180
-    implicitHeight: 760
-    minimumSize: Qt.size(960, 640)
+    implicitHeight: 780
+    // A compact mode is supported all the way down here; see Layout.js. The
+    // size is expressed in theme units so a larger font gets a larger floor.
+    minimumSize: Qt.size(Style.space(720), Style.space(520))
 
     onVisibleChanged: {
       if (!visible && !root.closingFromHost && root.shell && typeof root.shell.hide === "function")
@@ -1269,157 +1330,12 @@ Item {
         anchors.margins: Style.space(5)
         spacing: Style.space(4)
 
-        // ---------------------------------------------------- header
-        RowLayout {
+        // ---------------------------------------------------- top bar
+        PanelTopBar {
           Layout.fillWidth: true
-          spacing: Style.space(4)
-
-          ColumnLayout {
-            spacing: 1
-            RowLayout {
-              spacing: Style.space(3)
-              Text {
-                text: "Maus Control"
-                color: Color.foreground
-                font.family: Style.font.family
-                font.pixelSize: Style.font.heading
-                font.weight: Font.DemiBold
-              }
-              Rectangle {
-                visible: root.device
-                radius: Style.cornerRadius > 0 ? Style.cornerRadius : 3
-                color: Qt.rgba(Color.accent.r, Color.accent.g, Color.accent.b, 0.14)
-                border.color: Qt.rgba(Color.accent.r, Color.accent.g, Color.accent.b, 0.4)
-                border.width: 1
-                implicitWidth: sourceLabel.implicitWidth + Style.space(4)
-                implicitHeight: sourceLabel.implicitHeight + Style.space(2)
-                Layout.alignment: Qt.AlignVCenter
-                Text {
-                  id: sourceLabel
-                  anchors.centerIn: parent
-                  color: Color.accent
-                  font.family: Style.font.family
-                  font.pixelSize: Style.font.caption
-                  text: {
-                    if (!root.device) return ""
-                    if (root.device.source === "learned") return "LEARNED"
-                    if (root.device.source === "profile") return "KNOWN MODEL"
-                    if (root.device.source === "assumed") return "GUESSED"
-                    return "DETECTED"
-                  }
-                }
-              }
-            }
-            RowLayout {
-              spacing: Style.space(2)
-              Text {
-                text: root.device
-                  ? root.device.label + "  ·  " + root.buttonList.length + " buttons  ·  " +
-                    root.mappedCount + " mapped"
-                  : "Looking for a mouse…"
-                color: Color.muted
-                font.family: Style.font.family
-                font.pixelSize: Style.font.bodySmall
-              }
-              // Only wireless mice report a battery, so this whole group
-              // disappears rather than showing an empty reading.
-              Text {
-                visible: root.battery !== null
-                text: "·"
-                color: Color.muted
-                font.family: Style.font.family
-                font.pixelSize: Style.font.bodySmall
-              }
-              Text {
-                visible: root.battery !== null
-                text: {
-                  if (!root.battery) return ""
-                  // Written as characters, not escapes; see the mouse glyph below.
-                  var glyph = root.battery.charging ? "" : ""
-                  return glyph + "  " + Devices.batteryLabel(root.battery)
-                }
-                color: root.battery && root.battery.low ? Color.urgent : Color.accent
-                font.family: Style.font.family
-                font.pixelSize: Style.font.bodySmall
-                font.weight: Font.DemiBold
-              }
-
-              // The live sensitivity, which changes under you when a sensitivity button is
-              // pressed, so it belongs beside the mouse's name rather than
-              // buried in the sidebar that sets it.
-              Text {
-                visible: root.sensPreset !== null
-                text: "·"
-                color: Color.muted
-                font.family: Style.font.family
-                font.pixelSize: Style.font.bodySmall
-              }
-              Text {
-                visible: root.sensPreset !== null
-                // nf-md-mouse, the same glyph the bar widget uses.
-                //
-                // Every icon glyph in this plugin is written as the character
-                // itself rather than a \u escape, and a test enforces it. An
-                // escape takes exactly four hex digits, so a codepoint above
-                // U+FFFF cannot be spelled that way at all: "\uf037d" is
-                // U+F037 followed by a literal "d". Writing the character
-                // makes that mistake unavailable.
-                // The active preset, in whatever unit its profile implies.
-                text: root.sensPresetText !== ""
-                  ? "󰍽  " + root.sensPresetText : ""
-                color: Color.accent
-                font.family: Style.font.family
-                font.pixelSize: Style.font.bodySmall
-                font.weight: Font.DemiBold
-
-                MouseArea {
-                  anchors.fill: parent
-                  hoverEnabled: true
-                  cursorShape: Qt.PointingHandCursor
-                  onClicked: root.openSens()
-                }
-              }
-
-              // Wheel speed, beside the pointer speed it sits next to in the
-              // sidebar. It never changes on its own, so it is a plain
-              // readout rather than a watched one.
-              Text {
-                visible: root.scrollOn
-                text: "·"
-                color: Color.muted
-                font.family: Style.font.family
-                font.pixelSize: Style.font.bodySmall
-              }
-              Text {
-                visible: root.scrollOn
-                text: "⇅  " + root.scrollReadout + " scroll"
-                color: Color.accent
-                font.family: Style.font.family
-                font.pixelSize: Style.font.bodySmall
-                font.weight: Font.DemiBold
-
-                MouseArea {
-                  anchors.fill: parent
-                  hoverEnabled: true
-                  cursorShape: Qt.PointingHandCursor
-                  onClicked: root.openScroll()
-                }
-              }
-            }
-          }
-
-          Item { Layout.fillWidth: true }
-
-          // Device switcher, only when there is a choice to make.
-          Repeater {
-            model: root.devices.length > 1 ? root.devices : []
-            Ui.Button {
-              text: modelData.label
-              bordered: true
-              selected: index === root.deviceIndex
-              onClicked: { root.deviceIndex = index; root.selectedCode = -1; root.configRev++ }
-            }
-          }
+          panel: root
+          compact: root.chromeMode === "compact"
+          deviceDetail: root.deviceDetail
         }
 
         Rectangle {
@@ -1429,16 +1345,16 @@ Item {
         }
 
         // ---------------------------------------------------- body
-        RowLayout {
+        Item {
+          id: body
           Layout.fillWidth: true
           Layout.fillHeight: true
-          spacing: Style.space(4)
 
           // -------------------------------------------- diagram
           Item {
             id: diagram
-            Layout.fillWidth: true
-            Layout.fillHeight: true
+            anchors.fill: parent
+            anchors.rightMargin: root.paneOpen && root.paneDocked ? root.sidePaneWidth + Style.space(4) : 0
 
             readonly property var buttons: root.canvasButtons(width, height)
             readonly property var placements: root.canvasPlacements(width, height, buttons)
@@ -1677,271 +1593,44 @@ Item {
             }
           }
 
-          // -------------------------------------------- detect wizard
+
+          // -------------------------------------------- overlay scrim
           Rectangle {
-            Layout.preferredWidth: 320
-            Layout.fillHeight: true
-            visible: root.learning
-            radius: Style.cornerRadius > 0 ? Style.cornerRadius : 6
-            color: Qt.rgba(Color.accent.r, Color.accent.g, Color.accent.b, 0.06)
-            border.width: 1
-            border.color: Qt.rgba(Color.accent.r, Color.accent.g, Color.accent.b, 0.35)
-
-            ColumnLayout {
+            anchors.fill: parent
+            visible: root.paneOpen && !root.paneDocked
+            color: Qt.rgba(0, 0, 0, 0.35)
+            MouseArea {
               anchors.fill: parent
-              anchors.margins: Style.space(4)
-              spacing: Style.space(3)
-
-              Text {
-                Layout.fillWidth: true
-                text: "Detecting buttons"
-                color: Color.foreground
-                font.family: Style.font.family
-                font.pixelSize: Style.font.subtitle
-                font.weight: Font.DemiBold
-              }
-              Text {
-                Layout.fillWidth: true
-                text: root.learnCurrent
-                  ? "Step " + (root.learnStep + 1) + " of " + root.learnSteps.length
-                  : ""
-                color: Color.muted
-                font.family: Style.font.family
-                font.pixelSize: Style.font.caption
-              }
-
-              // The ask.
-              Rectangle {
-                Layout.fillWidth: true
-                radius: Style.cornerRadius > 0 ? Style.cornerRadius : 5
-                color: Qt.rgba(Color.accent.r, Color.accent.g, Color.accent.b, 0.14)
-                border.color: Color.accent
-                border.width: 1
-                implicitHeight: promptText.implicitHeight + Style.space(6)
-
-                Text {
-                  id: promptText
-                  anchors.fill: parent
-                  anchors.margins: Style.space(3)
-                  text: root.learnCurrent ? root.learnCurrent.prompt : ""
-                  wrapMode: Text.WordWrap
-                  horizontalAlignment: Text.AlignHCenter
-                  verticalAlignment: Text.AlignVCenter
-                  color: Color.accent
-                  font.family: Style.font.family
-                  font.pixelSize: Style.font.body
-                  font.weight: Font.DemiBold
-                }
-              }
-
-              Text {
-                Layout.fillWidth: true
-                text: "If your mouse has no such button, press Skip."
-                wrapMode: Text.WordWrap
-                color: Color.muted
-                font.family: Style.font.family
-                font.pixelSize: Style.font.caption
-              }
-
-              // What has been claimed so far, so a mis-press is visible
-              // immediately rather than at the end.
-              Ui.PanelSectionHeader {
-                Layout.fillWidth: true
-                Layout.topMargin: Style.space(2)
-                text: "FOUND SO FAR"
-              }
-
-              Repeater {
-                model: { root.learnRev; return root.learnSeen }
-                delegate: RowLayout {
-                  required property var modelData
-                  Layout.fillWidth: true
-                  spacing: Style.space(2)
-                  Text {
-                    text: Devices.buttonName(modelData)
-                    color: Color.foreground
-                    font.family: Style.font.family
-                    font.pixelSize: Style.font.caption
-                  }
-                  Item { Layout.fillWidth: true }
-                  Text {
-                    text: {
-                      root.learnRev
-                      for (var place in root.learnLayout) {
-                        if (root.learnLayout[place] === modelData) {
-                          var spec = Profiles.places()[place]
-                          return spec ? spec.role : place
-                        }
-                      }
-                      return ""
-                    }
-                    color: Color.accent
-                    font.family: Style.font.family
-                    font.pixelSize: Style.font.caption
-                  }
-                }
-              }
-
-              Text {
-                Layout.fillWidth: true
-                visible: root.learnSeen.length === 0
-                text: "nothing yet"
-                color: Color.muted
-                font.italic: true
-                font.family: Style.font.family
-                font.pixelSize: Style.font.caption
-              }
-
-              Item { Layout.fillHeight: true }
-
-              RowLayout {
-                Layout.fillWidth: true
-                spacing: Style.space(2)
-                Ui.Button {
-                  text: "Cancel"
-                  bordered: true
-                  onClicked: root.cancelLearn()
-                }
-                Item { Layout.fillWidth: true }
-                Ui.Button {
-                  text: "Skip"
-                  bordered: true
-                  onClicked: root.skipLearnStep()
-                }
-                Ui.Button {
-                  text: "Finish"
-                  bordered: true
-                  active: root.learnSeen.length > 0
-                  onClicked: root.finishLearn()
-                }
-              }
+              onClicked: root.setMode("map")
             }
           }
 
-          // -------------------------------------------- sens
-          Rectangle {
-            Layout.preferredWidth: 340
-            Layout.fillHeight: true
-            visible: root.sensOpen && !root.learning && root.selectedCode < 0
-            radius: Style.cornerRadius > 0 ? Style.cornerRadius : 6
-            color: Qt.rgba(Color.foreground.r, Color.foreground.g, Color.foreground.b, 0.035)
-            border.width: 1
-            border.color: Qt.rgba(Color.foreground.r, Color.foreground.g, Color.foreground.b, 0.12)
-
-            SensPanel {
-              anchors.fill: parent
-              anchors.margins: Style.space(4)
-              panel: root
-            }
-          }
-
-          // -------------------------------------------- scroll
-          Rectangle {
-            Layout.preferredWidth: 340
-            Layout.fillHeight: true
-            visible: root.scrollOpen && !root.learning && root.selectedCode < 0
-            radius: Style.cornerRadius > 0 ? Style.cornerRadius : 6
-            color: Qt.rgba(Color.foreground.r, Color.foreground.g, Color.foreground.b, 0.035)
-            border.width: 1
-            border.color: Qt.rgba(Color.foreground.r, Color.foreground.g, Color.foreground.b, 0.12)
-
-            ScrollPanel {
-              anchors.fill: parent
-              anchors.margins: Style.space(4)
-              panel: root
-            }
-          }
-
-          // -------------------------------------------- inspector
-          Rectangle {
-            Layout.preferredWidth: 320
-            Layout.fillHeight: true
-            visible: root.selectedCode >= 0 && !root.learning
-            radius: Style.cornerRadius > 0 ? Style.cornerRadius : 6
-            color: Qt.rgba(Color.foreground.r, Color.foreground.g, Color.foreground.b, 0.035)
-            border.width: 1
-            border.color: Qt.rgba(Color.foreground.r, Color.foreground.g, Color.foreground.b, 0.12)
-
-            ActionPicker {
-              anchors.fill: parent
-              anchors.margins: Style.space(4)
-              panel: root
-            }
+          // -------------------------------------------- side pane
+          SidePane {
+            id: sidePane
+            panel: root
+            overlay: !root.paneDocked
+            anchors.top: parent.top
+            anchors.bottom: parent.bottom
+            anchors.right: parent.right
+            width: root.sidePaneWidth
+            visible: root.paneOpen
           }
         }
 
-        // ---------------------------------------------------- footer
+        // ---------------------------------------------------- action bar
         Rectangle {
           Layout.fillWidth: true
           implicitHeight: 1
           color: Qt.rgba(Color.foreground.r, Color.foreground.g, Color.foreground.b, 0.12)
         }
 
-        RowLayout {
+        PanelBottomBar {
           Layout.fillWidth: true
-          spacing: Style.space(3)
-
-          Text {
-            Layout.fillWidth: true
-            text: root.status !== "" ? root.status
-                 : (root.dirty ? "Unsaved changes." : "Click a button on the mouse to map it.")
-            color: root.statusBad ? Color.urgent : (root.dirty ? Color.accent : Color.muted)
-            font.family: Style.font.family
-            font.pixelSize: Style.font.bodySmall
-            elide: Text.ElideRight
-          }
-
-          Ui.Button {
-            text: "Sens"
-            bordered: true
-            selected: root.sensOpen
-            enabled: !root.learning
-            tooltipText: "Pointer sensitivity: acceleration profile, sensor DPI, and presets to switch between."
-            onClicked: root.sensOpen ? root.sensOpen = false : root.openSens()
-          }
-          Ui.Button {
-            text: "Scroll"
-            bordered: true
-            selected: root.scrollOpen
-            enabled: !root.learning
-            tooltipText: "Wheel speed for this mouse, as a multiplier."
-            onClicked: root.scrollOpen ? root.scrollOpen = false : root.openScroll()
-          }
-          Ui.Button {
-            text: root.learning ? "Cancel detect" : "Detect buttons"
-            bordered: true
-            selected: root.learning
-            tooltipText: "Walk through each button so Maus Control learns which ones exist and where they are."
-            onClicked: root.learning ? root.cancelLearn() : root.startLearn()
-          }
-          Ui.Button {
-            text: root.testing ? "Stop test" : "Test placement"
-            bordered: true
-            selected: root.testing
-            enabled: !root.learning
-            tooltipText: "Press your mouse buttons and watch them light up, so you can check each one is drawn in the right place."
-            onClicked: root.testing ? root.stopTest() : root.startTest()
-          }
-          Ui.Button {
-            text: "Rescan"
-            bordered: true
-            enabled: !root.busy
-            onClicked: root.refresh()
-          }
-          Ui.Button {
-            text: "Revert"
-            bordered: true
-            enabled: root.dirty && !root.busy
-            onClicked: { root.selectedCode = -1; readConfigProc.running = true; root.dirty = false; root.say("") }
-          }
-          Ui.Button {
-            text: root.busy ? "Applying…" : "Apply"
-            bordered: true
-            active: root.dirty
-            enabled: root.dirty && !root.busy
-            onClicked: root.applyNow()
-          }
+          panel: root
+          compact: root.chromeMode === "compact"
         }
+
       }
     }
   }
